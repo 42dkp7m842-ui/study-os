@@ -1,6 +1,10 @@
 const PLAN_START='2026-11-22';
 const FIRST_DAY=[['08:00','09:15','FAR','required'],['09:30','10:05','国徴','required']];
 function migratePlan(data) {
+  if(!data.settings.taxDateMigrated){
+    if(data.settings.taxExam==='2027-08-01')data.settings.taxExam='';
+    data.settings.taxDateMigrated=true;
+  }
   for(const task of data.tasks) {
     const match=/^tax-(theory|problem)-\d+-(\d+)$/.exec(task.id);
     if(!match)continue;
@@ -13,13 +17,24 @@ function migratePlan(data) {
 function planTargets(date) {
   if(weekStart(date)<weekStart(PLAN_START))return {FAR:0,国徴:0};
   if(weekStart(date)===weekStart(PLAN_START))return {FAR:75,国徴:35};
+  if(weekDays(date).some(taxOnlyDay)){
+    return weekDays(date).reduce((totals,day)=>{
+      if(taxOnlyDay(day)){
+        const type=['sunday','office','office','office','remote','remote','saturday'][dow(day)];
+        totals.国徴+=taxMinutes(day,type);
+      }else if(day<state.settings.farExam){
+        for(const [start,end,subject,kind] of templateBlocks(day))if(kind==='required')totals[subject]+=mins(end)-mins(start);
+      }
+      return totals;
+    },{FAR:0,国徴:0});
+  }
   return weeklyTargets;
 }
 function orderedPlanTasks(subject) {
   // Completed items retain their place on the timeline so marking a task
   // complete cannot shift a later lesson into a previously scheduled slot.
   const tasks=state.tasks.filter(t=>t.subject===subject && !/^lecture-0-[1-6]$/.test(t.id));
-  if(subject!=='FAR')return tasks;
+  if(subject==='国徴')return taxMaterials(tasks);
   const lessons=tasks.filter(t=>t.kind==='lecture');
   const exercises=tasks.filter(t=>t.kind==='mcq'||t.kind==='tbs');
   const pending=new Map(exercises.map(t=>[t,Math.max(0,Number(t.minutes)||0)]));
@@ -102,12 +117,14 @@ function planSlots(date) {
     if(seen.has(task.id))return;
     seen.add(task.id);
     const base=firstLog.get(task.id)||day;
-    for(const [gap,left] of reviewCycle)reviews[task.subject].push({task,left,due:shift(base,gap),label:gap+'日後復習'});
+    const cycle=task.subject==='国徴'&&task.kind==='problem'?[[1,5],[3,10],[7,10],[14,15]]:reviewCycle;
+    for(const [gap,left] of cycle)reviews[task.subject].push({task,left,due:shift(base,gap),label:gap+'日後復習'});
     reviews[task.subject].sort((a,b)=>a.due.localeCompare(b.due));
   }
   for(const t of state.tasks)if(firstLog.has(t.id)&&reviews[t.subject])enroll(t,firstLog.get(t.id));
   const drills=state.tasks.filter(t=>t.subject==='FAR'&&['mcq','tbs'].includes(t.kind));
   const mock=mockDays().map((due,i)=>({due,left:240,label:'模試'+(i+1)+'｜時間を計って総合演習'}));
+  const papers=taxPapers();
   const rotations=new Map();
   function drill(day,subject){
     let kind='mcq',label='章別MCQ・誤答の解き直し';
@@ -125,7 +142,13 @@ function planSlots(date) {
       const weak=pool.filter(t=>scores.has(t.id)&&Number(scores.get(t.id).accuracy)<80);
       if(weak.length)pool=weak;
     }
-    if(subject==='国徴')label='理論を白紙から再現';
+    if(subject==='国徴'){
+      const kind=dow(day)%2?'problem':'theory';
+      pool=state.tasks.filter(t=>t.subject===subject&&t.kind===kind);
+      const weak=pool.filter(t=>state.logs.some(l=>l.taskId===t.id&&l.date<day&&l.accuracy!=null&&l.accuracy<80));
+      if(weak.length)pool=weak;
+      label=kind==='theory'?'理論を白紙から再現':'テーマ問題・誤答再演習';
+    }
     const key=subject+label+kind,index=rotations.get(key)||0;
     rotations.set(key,index+1);
     return {task:pool[index%pool.length],label,left:60};
@@ -133,11 +156,11 @@ function planSlots(date) {
   for(let week=weekStart(PLAN_START);week<=endWeek;week=shift(week,7)){
     const intervals=weekIntervals(week);
     for(const slot of intervals){
-      if(slot.subject==='FAR'&&slot.date>=state.settings.farExam)continue;
+      if(slot.subject==='FAR'&&slot.date>=state.settings.farExam||slot.subject==='国徴'&&slot.date>=taxEnd())continue;
       const queue=queues[slot.subject],due=reviews[slot.subject];
       let cursor=slot.start;
       while(cursor<slot.end){
-        const simulation=slot.subject==='FAR'&&mock.find(m=>m.due<=slot.date&&m.left);
+        const simulation=(slot.subject==='FAR'?mock:papers).find(m=>m.due<=slot.date&&m.left);
         const review=due[0]?.due<=slot.date?due[0]:null;
         // Keep the opening lecture on Monday morning; its review can use the evening block.
         const defer=slot.date==='2026-11-23'&&slot.start<720&&slot.subject==='FAR';
@@ -165,4 +188,53 @@ function refreshApp(){
 function manualTasks(slots){
   const planned=slots.filter(s=>s.id).map(s=>({id:s.id,value:'slot-'+s.start,name:s.start+' '+s.title,title:s.title,planStart:s.start,subject:s.subject}));
   return planned.concat(state.tasks);
+}
+
+function taxOnlyDay(date){return date>state.settings.farExam;}
+function taxEnd(){return state.settings.taxExam||'2027-09-01';}
+function taxMinutes(date,type){
+  if(date>=taxEnd()||type==='off'||type==='sunday')return 0;
+  const phase=date<'2027-06-07'?0:date<'2027-07-05'?1:2;
+  const minutes={office:[30,90,120],remote:[75,135,180],saturday:[240,420,480],holiday:[240,420,480]};
+  return minutes[type]?.[phase]||0;
+}
+function taxBlocks(date,type){
+  let budget=taxMinutes(date,type);
+  if(!budget)return [];
+  const times=type==='office'?[['06:00',60],['20:00',60]]:type==='remote'?[['06:30',120],['19:45',90]]:[['07:30',120],['09:45',120],['12:45',120],['15:00',120]];
+  const blocks=[];
+  for(const [start,limit] of times){
+    if(!budget)break;
+    const n=Math.min(limit,budget);blocks.push([start,hh(mins(start)+n),'国徴','required']);budget-=n;
+  }
+  if(type==='remote')blocks.push(['21:45','22:15','予備','buffer']);
+  if(type==='saturday'||type==='holiday')blocks.push(['18:30','20:30','予備','buffer']);
+  return blocks;
+}
+function taxMaterials(tasks){
+  const theory=tasks.filter(t=>t.kind==='theory'),problems=tasks.filter(t=>t.kind==='problem');
+  const order=theory.slice(0,25);
+  for(let i=0;i<Math.max(theory.length-25,problems.length);i++){
+    if(theory[i+25])order.push(theory[i+25]);
+    if(problems[i])order.push(problems[i]);
+  }
+  return order.concat(tasks.filter(t=>!['theory','problem','past'].includes(t.kind)));
+}
+function taxPapers(){
+  const end=state.settings.taxExam||'2027-08-01';
+  const last=shift(end,-1);
+  const saturday=shift(last,-((dow(last)+1)%7));
+  const papers=state.tasks.filter(t=>t.subject==='国徴'&&t.kind==='past');
+  return papers.flatMap((task,i)=>{
+    const due=shift(saturday,-7*(papers.length-1-i));
+    return [{task,due,left:Number(task.minutes)||120,label:'過去問・時間を計って答案作成'},
+      {task,due,left:60,label:'採点・不足した根拠と語句を書き直す'}];
+  });
+}
+function taxRoadmap(){
+  return `<details class="card"><summary>国税徴収法｜8月までの独学計画</summary>
+    <p>試験日：${esc(state.settings.taxExam||'2027年8月・日付未定')}。理論テキスト・テーマ問題・過去問を使います。</p>
+    ${[[shift(state.settings.farExam,1),'FAR後〜6/6：週8時間'],['2027-06-07','6/7〜7/4：週16時間'],['2027-07-05','7/5以降：週20時間']].map(([date,label])=>`<p><button class="secondary" onclick="selected='${date}';go('week')">${label}</button></p>`).join('')}
+    <p>理論は見出しと要件を白紙から再現し、テーマ問題で事例に適用。過去問は直近に登録した5年分を週1回、答案作成と採点に分けます。</p>
+    <p>日程未定の間は7月末に過去問を終え、8月は復習を継続します。「設定」で試験日を入力すると過去問の日程と最終学習日が変わります。</p></details>`;
 }
