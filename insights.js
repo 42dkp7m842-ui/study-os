@@ -39,7 +39,7 @@ function calendarView() {
     <div class="month-grid">${['月','火','水','木','金','土','日'].map(n=>'<small>'+n+'</small>').join('')}${'<i></i>'.repeat((dow(first)+6)%7)}${dates.join('')}</div>
     <div class="actions"><button class="secondary" onclick="selectDate(today())">今日に戻る</button></div></section>
     <section class="card"><div class="row"><h3>${selected.slice(5)}（${names[dow(selected)]}）</h3><b>${fmt(loggedMinutes(logs))}</b></div>
-    ${logs.map(l=>`<div class="line"><b>${esc(state.tasks.find(t=>t.id===l.taskId)?.name||l.subject)}</b><small>${esc(l.subject)} · ${Number(l.minutes)}分${l.accuracy!=null?' · 正答率 '+Number(l.accuracy)+'%':''}</small>${l.reason?'<p>'+esc(l.reason)+'</p>':''}</div>`).join('') || '<p class="muted">学習記録はありません。</p>'}
+    ${logs.map(l=>`<div class="line"><b>${esc(l.title||state.tasks.find(t=>t.id===l.taskId)?.name||l.subject)}</b><small>${esc(l.subject)} · ${Number(l.minutes)}分${l.accuracy!=null?' · 正答率 '+Number(l.accuracy)+'%':''}</small>${l.reason?'<p>'+esc(l.reason)+'</p>':''}</div>`).join('') || '<p class="muted">学習記録はありません。</p>'}
     ${events.map(e=>`<p>予定　${esc(e.start)}–${esc(e.end)}　${esc(e.name)}</p>`).join('')}
     <div class="actions"><button onclick="go('today')">この日の記録を開く</button><button class="secondary" onclick="go('review')">この週を分析</button></div></section>`;
 }
