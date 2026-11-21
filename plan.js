@@ -18,8 +18,35 @@ function planTargets(date) {
 function orderedPlanTasks(subject) {
   // Completed items retain their place on the timeline so marking a task
   // complete cannot shift a later lesson into a previously scheduled slot.
-  return state.tasks.filter(t=>t.subject===subject && !/^lecture-0-[1-6]$/.test(t.id))
-    .sort((a,b)=>Number(b.kind==='lecture')-Number(a.kind==='lecture'));
+  const tasks=state.tasks.filter(t=>t.subject===subject && !/^lecture-0-[1-6]$/.test(t.id));
+  if(subject!=='FAR')return tasks;
+  const lessons=tasks.filter(t=>t.kind==='lecture');
+  const exercises=tasks.filter(t=>t.kind==='mcq'||t.kind==='tbs');
+  const pending=new Map(exercises.map(t=>[t,Math.max(0,Number(t.minutes)||0)]));
+  const ordered=[];
+  function appendPractice(kind,budget) {
+    for(const task of exercises){
+      if(task.kind!==kind || !pending.get(task))continue;
+      const minutes=Math.min(budget,pending.get(task));
+      ordered.push({...task,minutes});
+      pending.set(task,pending.get(task)-minutes);
+      budget-=minutes;
+      if(!budget)break;
+    }
+  }
+  for(const lesson of lessons){
+    ordered.push(lesson);
+    // Keep the initial Sunday and Monday morning as previously scheduled.
+    if(lesson.id==='lecture-0-7')continue;
+    appendPractice('mcq',30);
+    appendPractice('tbs',15);
+  }
+  for(const task of tasks){
+    if(task.kind==='lecture')continue;
+    if(!pending.has(task))ordered.push(task);
+    else if(pending.get(task)>0)ordered.push({...task,minutes:pending.get(task)});
+  }
+  return ordered;
 }
 function weekIntervals(date) {
   const w=weekly(date),slots=[],lost=[];
@@ -46,18 +73,18 @@ function weekIntervals(date) {
 function planSlots(date) {
   const endWeek=weekStart(date),out=[];
   if(endWeek<weekStart(PLAN_START))return out;
-  const queues={FAR:orderedPlanTasks('FAR'),国徴:orderedPlanTasks('国徴')},remaining={};
-  for(const task of state.tasks)remaining[task.id]=Number(task.minutes)||0;
+  const entries=subject=>orderedPlanTasks(subject).map(task=>({task,left:Math.max(0,Number(task.minutes)||0)}));
+  const queues={FAR:entries('FAR'),国徴:entries('国徴')};
   for(let week=weekStart(PLAN_START);week<=endWeek;week=shift(week,7)){
     if(!queues.FAR.length && !queues.国徴.length)week=endWeek;
     for(const slot of weekIntervals(week)){
       const queue=queues[slot.subject];
       let cursor=slot.start;
       while(cursor<slot.end){
-        const task=queue[0];
-        const minutes=task?Math.min(remaining[task.id],slot.end-cursor):slot.end-cursor;
+        const entry=queue[0],task=entry?.task;
+        const minutes=task?Math.min(entry.left,slot.end-cursor):slot.end-cursor;
         if(minutes>0 && week===endWeek)out.push({...slot,start:hh(cursor),end:hh(cursor+minutes),title:task?.name||'教材を追加してください',id:task?.id||null});
-        if(task){remaining[task.id]-=minutes;if(remaining[task.id]<=0)queue.shift();}
+        if(task){entry.left-=minutes;if(entry.left<=0)queue.shift();}
         cursor+=Math.max(0,minutes);
       }
     }
