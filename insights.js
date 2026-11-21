@@ -44,10 +44,11 @@ function calendarView() {
     <div class="actions"><button onclick="go('today')">この日の記録を開く</button><button class="secondary" onclick="go('review')">この週を分析</button></div></section>`;
 }
 function weeklyCharts(week,logs) {
+  const targets=planTargets(week.dates[0]);
   const totals=week.dates.map(date=>loggedMinutes(logs.filter(l=>l.date===date)));
   const max=Math.max(1,...totals);
-  return `<section class="progress-row">${progressRow('週間達成率',loggedMinutes(logs),1380)}
-    ${Object.entries(weeklyTargets).map(([subject,target])=>progressRow(subject,loggedMinutes(logs.filter(l=>l.subject===subject)),target)).join('')}
+  return `<section class="progress-row">${progressRow('週間達成率',loggedMinutes(logs),targets.FAR+targets.国徴)}
+    ${Object.entries(targets).map(([subject,target])=>progressRow(subject,loggedMinutes(logs.filter(l=>l.subject===subject)),target)).join('')}
     <h3>曜日別の学習時間</h3><div class="chart">${totals.map((minutes,i)=>`<div><small>${minutes}分</small><div class="column"><i style="height:${minutes/max*100}%"></i></div><b>${names[dow(week.dates[i])]}</b></div>`).join('')}</div></section>`;
 }
 function reviewArchive() {

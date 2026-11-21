@@ -1,4 +1,4 @@
-const dayLabels={office:'出社',remote:'リモート',saturday:'土曜学習',holiday:'祝日',off:'学習なし',sunday:'日曜予備'};
+const dayLabels={start:'学習開始日',office:'出社',remote:'リモート',saturday:'土曜学習',holiday:'祝日',off:'学習なし',sunday:'日曜予備'};
 function datedBlocks(date) {
   const moves=state.blockMoves||[];
   const originals=templateBlocks(date).map(([start,end,subject,kind])=>({
@@ -33,6 +33,7 @@ function fillMovement() {
 }
 function applyMovement() {
   const {isBlock,item}=selectedMovement(),date=$('moveDate').value,start=$('moveStart').value;
+  if(isBlock&&date<PLAN_START)return alert('学習枠は11月22日以降に移動してください。');
   if(!item||!date||!start)return alert('移動先の日付と開始時刻を指定してください。');
   const from=mins(start),until=from+mins(item.end)-mins(item.start);
   if(until>1440)return alert('終了が翌日になります。同じ日で終了する時刻を選んでください。');
