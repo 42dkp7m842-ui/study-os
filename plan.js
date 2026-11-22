@@ -5,6 +5,10 @@ function migratePlan(data) {
     if(data.settings.taxExam==='2027-08-01')data.settings.taxExam='';
     data.settings.taxDateMigrated=true;
   }
+  if(!data.settings.taxAug5Migrated){
+    if(!data.settings.taxExam)data.settings.taxExam='2027-08-05';
+    data.settings.taxAug5Migrated=true;
+  }
   for(const task of data.tasks) {
     const match=/^tax-(theory|problem)-\d+-(\d+)$/.exec(task.id);
     if(!match)continue;
@@ -233,7 +237,7 @@ function taxPapers(){
 }
 function taxRoadmap(){
   return `<details class="card"><summary>国税徴収法｜8月までの独学計画</summary>
-    <p>試験日：${esc(state.settings.taxExam||'2027年8月・日付未定')}。理論テキスト・テーマ問題・過去問を使います。</p>
+    <p>試験日：${state.settings.taxExam==='2027-08-05'?'2027年8月5日（仮）':esc(state.settings.taxExam||'2027年8月・日付未定')}。理論テキスト・テーマ問題・過去問を使います。</p>
     ${[[shift(state.settings.farExam,1),'FAR後〜6/6：週8時間'],['2027-06-07','6/7〜7/4：週16時間'],['2027-07-05','7/5以降：週20時間']].map(([date,label])=>`<p><button class="secondary" onclick="selected='${date}';go('week')">${label}</button></p>`).join('')}
     <p>理論は見出しと要件を白紙から再現し、テーマ問題で事例に適用。過去問は直近に登録した5年分を週1回、答案作成と採点に分けます。</p>
     <p>日程未定の間は7月末に過去問を終え、8月は復習を継続します。「設定」で試験日を入力すると過去問の日程と最終学習日が変わります。</p></details>`;
