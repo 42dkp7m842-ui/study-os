@@ -21,28 +21,23 @@ function startTimer(id,subject,planStart){if(state.timer&&!confirm('現在の計
 
 
 const STRUCTURED_COPY_LIMIT = 2000;
-function structuredWeekMessages(dates, slots) {
-  const header = 'Study OS｜' + dates[0] + '〜' + dates[dates.length-1] + '（日本時間）\n以下の予定を登録・更新。重複は追加せず、完了済みと他の予定を保持。取消は全パートを照合してから候補を提示。';
+function structuredDayMessages(date, slots) {
+  const header = 'Study OS｜' + date + '（日本時間）\nこの日の予定を登録・更新。重複は追加せず、完了済みと他の予定を保持。取消はこの日の全パートを照合してから候補を提示。';
+  const rows = slots.filter(slot => slot.date === date).map(slot =>
+    slot.start + '〜' + slot.end + ' ' + slot.subject + ' ' + slot.title.replace(/\s+/g, ' ').trim()
+  );
+  if (!rows.length) rows.push('学習枠なし');
+  if (hasBath(date)) rows.push('22:00〜22:30 お風呂（固定）');
   const messages = [];
+  const room = STRUCTURED_COPY_LIMIT - header.length - 1;
   let current = header;
-  for (const date of dates) {
-    const rows = slots.filter(slot => slot.date === date).map(slot =>
-      slot.start + '〜' + slot.end + ' ' + slot.subject + ' ' + slot.title.replace(/\s+/g, ' ').trim()
-    );
-    if (!rows.length) rows.push('学習枠なし');
-    if (hasBath(date)) rows.push('22:00〜22:30 お風呂（固定）');
-    let dayHeading = '\n' + date;
-    for (let row of rows) {
-      const room = STRUCTURED_COPY_LIMIT - header.length - date.length - 2;
-      if (row.length > room) row = row.slice(0, room - 1) + '…';
-      if (current.length + dayHeading.length + 1 + row.length > STRUCTURED_COPY_LIMIT) {
-        messages.push(current);
-        current = header;
-        dayHeading = '\n' + date;
-      }
-      current += dayHeading + '\n' + row;
-      dayHeading = '';
+  for (const row of rows) {
+    const line = row.length <= room ? row : row.slice(0, room - 1) + '…';
+    if (current.length + 1 + line.length > STRUCTURED_COPY_LIMIT) {
+      messages.push(current);
+      current = header;
     }
+    current += '\n' + line;
   }
   messages.push(current);
   return messages;
@@ -52,15 +47,17 @@ function structuredExport(dates, slots) {
   if (!available.length) {
     return '<details class="card"><summary>Structured AIに渡す</summary><p>今日または今後の週を選択してください。</p></details>';
   }
-  const messages = structuredWeekMessages(available, slots);
+  const messages = available.flatMap(date => structuredDayMessages(date, slots).map((entry, index, parts) => ({
+    entry, label: date + (parts.length > 1 ? ' ' + (index + 1) + '/' + parts.length : '')
+  })));
   return `<details class="card"><summary>Structured AIに渡す</summary>
-    <p class="fine">表示中の週の今日以降の予定をまとめました。2,000文字を超える場合は番号順に貼り付けてください。</p>
-    <label for="structuredPart">コピーする範囲</label>
+    <p class="fine">日付を選んでコピーしてください。1日分が2,000文字を超えた場合は、その日の番号順に貼り付けてください。</p>
+    <label for="structuredPart">コピーする日付</label>
     <select id="structuredPart" onchange="showStructuredPart()">
-      ${messages.map((entry,index) => `<option value="${esc(entry).replaceAll('\n','&#10;')}">${messages.length===1?'まとめてコピー':(index+1)+' / '+messages.length}（${entry.length}文字）</option>`).join('')}
+      ${messages.map(({entry,label}) => `<option value="${esc(entry).replaceAll('\n','&#10;')}">${esc(label)}（${entry.length}文字）</option>`).join('')}
     </select>
     <label for="structuredText">Structured AI用のテキスト</label>
-    <textarea id="structuredText" rows="4" readonly>${esc(messages[0])}</textarea>
+    <textarea id="structuredText" rows="4" readonly>${esc(messages[0].entry)}</textarea>
     <div class="actions"><button type="button" onclick="copyStructuredPlan()">コピー</button></div>
     <p id="structuredCopyStatus" class="fine" role="status"></p>
   </details>`;
