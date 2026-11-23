@@ -37,6 +37,7 @@ function applyMovement() {
   const from=mins(start),until=from+mins(item.end)-mins(item.start);
   if(until>1440)return alert('終了が翌日になります。同じ日で終了する時刻を選んでください。');
   const end=hh(until);
+  if(overlapsBath(date,start,end))return alert('22:00〜22:30はお風呂の固定時間です。');
   const conflicts=e=>overlap(from,until,mins(e.start),mins(e.end))>0;
   if(state.events.some(e=>e!==item&&e.date===date&&conflicts(e)))return alert('移動先に別の予定があります。');
   if(isBlock&&datedBlocks(date).some(b=>!(item.origin===b.origin&&item.key===b.key)&&conflicts(b)))return alert('移動先に別の学習枠があります。');
@@ -108,4 +109,14 @@ function removeAvailableTime(index) {
     state.days[selected].availableTimes = availableTimes(selected).filter((_,i) => i !== index);
   });
   document.querySelector('.move-panel').open = true;
+}
+
+function hasBath(date) {
+  return ['office','remote','saturday','holiday','sunday'].includes(typeOf(date));
+}
+function overlapsBath(date,start,end) {
+  return hasBath(date) && start < '22:30' && end > '22:00';
+}
+function bathRow(date) {
+  return hasBath(date) ? '<div class="slot"><b>22:00–22:30</b><small>お風呂（固定）</small></div>' : '';
 }
