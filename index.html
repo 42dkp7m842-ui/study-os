@@ -20,24 +20,29 @@ function todayView(){let c=capacity(selected),slots=planSlots(selected).filter(s
 function startTimer(id,subject,planStart){if(state.timer&&!confirm('現在の計測を破棄して開始しますか？'))return;mutate(()=>state.timer={taskId:id,subject,planStart,title:planSlots(selected).find(s=>s.date===selected&&s.start===planStart)?.title,started:Date.now()})}function cancelTimer(){if(confirm('計測を取り消しますか？'))mutate(()=>state.timer=null)}function stopTimer(){let t=state.timer;if(!t)return;let n=Math.max(1,Math.round((Date.now()-t.started)/MIN));mutate(()=>{state.logs.push({id:uid(),date:today(),taskId:t.taskId,planStart:t.planStart,title:t.title,subject:t.subject,minutes:n,accuracy:null,reason:'',created:Date.now()});state.timer=null})}function addLog(){let t=manualTasks(planSlots(selected).filter(s=>s.date===selected)).find(x=>(x.value||x.id)===$('logTask').value),n=+$('logMinutes').value,raw=$('logAccuracy').value,accuracy=raw===''?null:+raw;if(!t||!Number.isFinite(n)||n<=0||n>1000||accuracy!==null&&(accuracy<0||accuracy>100))return alert('学習時間と正答率を確認してください');mutate(()=>{state.logs.push({id:uid(),date:selected,taskId:t.id,title:t.title||t.name,planStart:t.planStart,subject:t.subject,minutes:n,accuracy,reason:$('logReason').value.trim(),created:Date.now()});const item=state.tasks.find(x=>x.id===t.id);if(item&&accuracy!==null){item.mastery=accuracy;if(accuracy<80){item.status='review';item.due=shift(selected,accuracy<60?1:3)}else{item.status='done';item.due=''}}})}
 
 
-const STRUCTURED_COPY_LIMIT = 100;
-function structuredDayMessages(date, slots) {
-  const heading = date + ' 学習予定。重複は追加せず変更候補を提示：';
-  const rows = slots.filter(slot => slot.date === date).map(slot => {
-    const label = slot.start + '〜' + slot.end + ' ' + slot.subject + ' ';
-    const title = slot.title.replace(/\s+/g, ' ').trim();
-    const room = STRUCTURED_COPY_LIMIT - heading.length - label.length - 1;
-    return label + (title.length <= room ? title : title.slice(0, room - 1) + '…');
-  });
-  if (!rows.length) return [date + ' 学習枠なし。Study OS由来の未完了予定があれば取消候補を提示。'];
+const STRUCTURED_COPY_LIMIT = 2000;
+function structuredWeekMessages(dates, slots) {
+  const header = 'Study OS｜' + dates[0] + '〜' + dates[dates.length-1] + '（日本時間）\n以下の予定を登録・更新。重複は追加せず、完了済みと他の予定を保持。取消は全パートを照合してから候補を提示。';
   const messages = [];
-  let current = heading;
-  for (const row of rows) {
-    if (current.length + row.length + 1 > STRUCTURED_COPY_LIMIT) {
-      messages.push(current);
-      current = heading;
+  let current = header;
+  for (const date of dates) {
+    const rows = slots.filter(slot => slot.date === date).map(slot =>
+      slot.start + '〜' + slot.end + ' ' + slot.subject + ' ' + slot.title.replace(/\s+/g, ' ').trim()
+    );
+    if (!rows.length) rows.push('学習枠なし');
+    if (hasBath(date)) rows.push('22:00〜22:30 お風呂（固定）');
+    let dayHeading = '\n' + date;
+    for (let row of rows) {
+      const room = STRUCTURED_COPY_LIMIT - header.length - date.length - 2;
+      if (row.length > room) row = row.slice(0, room - 1) + '…';
+      if (current.length + dayHeading.length + 1 + row.length > STRUCTURED_COPY_LIMIT) {
+        messages.push(current);
+        current = header;
+        dayHeading = '\n' + date;
+      }
+      current += dayHeading + '\n' + row;
+      dayHeading = '';
     }
-    current += '\n' + row;
   }
   messages.push(current);
   return messages;
@@ -47,18 +52,15 @@ function structuredExport(dates, slots) {
   if (!available.length) {
     return '<details class="card"><summary>Structured AIに渡す</summary><p>今日または今後の週を選択してください。</p></details>';
   }
-  const messages = available.flatMap(date => structuredDayMessages(date, slots).map((entry, index, group) => ({
-    label: date + (group.length > 1 ? '（' + (index + 1) + '/' + group.length + '）' : ''),
-    entry
-  })));
+  const messages = structuredWeekMessages(available, slots);
   return `<details class="card"><summary>Structured AIに渡す</summary>
-    <p class="fine">日付と番号を選び、1つずつStructured AIに貼り付けてください。既存枠の取消が必要なときは、対象の予定を確認してください。</p>
-    <label for="structuredPart">日付・分割番号</label>
+    <p class="fine">表示中の週の今日以降の予定をまとめました。2,000文字を超える場合は番号順に貼り付けてください。</p>
+    <label for="structuredPart">コピーする範囲</label>
     <select id="structuredPart" onchange="showStructuredPart()">
-      ${messages.map(({entry,label}) => `<option value="${esc(entry).replaceAll('\n','&#10;')}">${esc(label)}（${entry.length}文字）</option>`).join('')}
+      ${messages.map((entry,index) => `<option value="${esc(entry).replaceAll('\n','&#10;')}">${messages.length===1?'まとめてコピー':(index+1)+' / '+messages.length}（${entry.length}文字）</option>`).join('')}
     </select>
     <label for="structuredText">Structured AI用のテキスト</label>
-    <textarea id="structuredText" rows="4" readonly>${esc(messages[0].entry)}</textarea>
+    <textarea id="structuredText" rows="4" readonly>${esc(messages[0])}</textarea>
     <div class="actions"><button type="button" onclick="copyStructuredPlan()">コピー</button></div>
     <p id="structuredCopyStatus" class="fine" role="status"></p>
   </details>`;
