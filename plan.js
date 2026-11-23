@@ -67,27 +67,43 @@ function orderedPlanTasks(subject) {
   }
   return ordered;
 }
-function weekIntervals(date) {
-  const w=weekly(date),slots=[],lost=[];
-  for(const day of w.cap)for(const b of day.slots){
-    if(b.kind!=='required')continue;
-    for(const [start,end] of b.parts)slots.push({date:day.date,start,end,subject:b.subject,kind:b.kind});
-    if(b.minutes>b.free)lost.push({subject:b.subject,minutes:b.minutes-b.free});
+function weeklyRecovery(cap, sun, sunParts) {
+  const slots=[], lost=[];
+  for(const day of cap)for(const block of day.slots){
+    if(block.kind!=='required')continue;
+    for(const [start,end] of block.parts)slots.push({date:day.date,start,end,subject:block.subject,kind:block.kind});
+    if(block.minutes>block.free)lost.push({subject:block.subject,minutes:block.minutes-block.free});
   }
-  function recover(day,parts,kind) {
+  const lostMinutes=lost.reduce((total,block)=>total+block.minutes,0);
+  function recover(date, parts, kind) {
+    let used=0;
     for(const [start,end] of parts){
       let cursor=start;
-      while(cursor<end && lost.length){
-        const need=lost[0],minutes=Math.min(end-cursor,need.minutes);
-        slots.push({date:day,start:cursor,end:cursor+minutes,subject:need.subject,kind});
-        cursor+=minutes;need.minutes-=minutes;
-        if(!need.minutes)lost.shift();
+      while(cursor<end){
+        const need=lost.find(block=>block.minutes>0 && date<(block.subject==='FAR'?state.settings.farExam:taxEnd()));
+        if(!need)break;
+        const minutes=Math.min(end-cursor,need.minutes);
+        slots.push({date,start:cursor,end:cursor+minutes,subject:need.subject,kind});
+        cursor+=minutes;
+        need.minutes-=minutes;
+        used+=minutes;
       }
     }
+    return used;
   }
-  for(const day of w.cap)for(const b of day.slots)if(b.kind==='buffer')recover(day.date,b.parts,'buffer');
-  recover(w.sun,w.sunParts,'emergency');
-  return slots.sort((a,b)=>a.date.localeCompare(b.date)||a.start-b.start);
+  let availableUsed=0, bufferUsed=0;
+  for(const day of cap)availableUsed+=recover(day.date,availableTimeParts(day.date),'available');
+  for(const day of cap)for(const block of day.slots){
+    if(block.kind==='buffer')bufferUsed+=recover(day.date,block.parts,'buffer');
+  }
+  const occupied=slots.filter(slot=>slot.date===sun&&slot.kind==='available').map(slot=>[slot.start,slot.end]);
+  const remainingSun=sunParts.flatMap(([start,end])=>freeParts(sun,start,end,occupied));
+  const sunUsed=recover(sun,remainingSun,'emergency');
+  const uncovered=lostMinutes-availableUsed-bufferUsed-sunUsed;
+  return {slots,lost:lostMinutes,availableUsed,bufferUsed,sunUsed,uncovered};
+}
+function weekIntervals(date) {
+  return weekly(date).slots.sort((a,b)=>a.date.localeCompare(b.date)||a.start-b.start);
 }
 const reviewCycle=[[1,15],[3,20],[7,25],[14,30]];
 const farPhases=[
