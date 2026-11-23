@@ -21,38 +21,67 @@ function startTimer(id,subject,planStart){if(state.timer&&!confirm('現在の計
 
 
 const STRUCTURED_COPY_LIMIT = 2000;
-function structuredDayMessages(date, slots) {
-  const header = 'Study OS｜' + date + '（日本時間）\nこの日の予定を登録・更新。重複は追加せず、完了済みと他の予定を保持。取消はこの日の全パートを照合してから候補を提示。';
-  const rows = slots.filter(slot => slot.date === date).map(slot =>
-    slot.start + '〜' + slot.end + ' ' + slot.subject + ' ' + slot.title.replace(/\s+/g, ' ').trim()
-  );
-  if (!rows.length) rows.push('学習枠なし');
-  if (hasBath(date)) rows.push('22:00〜22:30 お風呂（固定）');
-  const messages = [];
-  const room = STRUCTURED_COPY_LIMIT - header.length - 1;
-  let current = header;
-  for (const row of rows) {
-    const line = row.length <= room ? row : row.slice(0, room - 1) + '…';
-    if (current.length + 1 + line.length > STRUCTURED_COPY_LIMIT) {
-      messages.push(current);
-      current = header;
-    }
-    current += '\n' + line;
+function structuredDates(mode, date) {
+  if (mode === 'day') return [date];
+  if (mode === 'week') return weekDays(date).filter(day => day >= today());
+  const month = date.slice(0, 7);
+  const dates = [];
+  for (let day = month + '-01'; day.startsWith(month); day = shift(day, 1)) {
+    if (day >= today()) dates.push(day);
   }
-  messages.push(current);
-  return messages;
+  return dates;
+}
+function structuredMessages(dates, slots) {
+  const range = dates.length === 1 ? dates[0] : dates[0] + '〜' + dates[dates.length - 1];
+  const header = 'Study OS｜' + range + '（日本時間）\n以下の予定を登録・更新。重複は追加せず、完了済みと他の予定を保持。取消は全パート照合後に候補を提示。';
+  const parts = [];
+  let current = header;
+  for (const date of dates) {
+    const rows = slots.filter(slot => slot.date === date).map(slot =>
+      slot.start + '〜' + slot.end + ' ' + slot.subject + ' ' + slot.title.replace(/\s+/g, ' ').trim()
+    );
+    if (!rows.length) rows.push('学習枠なし');
+    if (hasBath(date)) rows.push('22:00〜22:30 お風呂（固定）');
+    let prefix = '\n' + date;
+    for (const row of rows) {
+      const room = STRUCTURED_COPY_LIMIT - header.length - date.length - 2;
+      const line = row.length <= room ? row : row.slice(0, room - 1) + '…';
+      if (current.length + prefix.length + 1 + line.length > STRUCTURED_COPY_LIMIT) {
+        parts.push(current);
+        current = header;
+        prefix = '\n' + date;
+      }
+      current += prefix + '\n' + line;
+      prefix = '';
+    }
+  }
+  parts.push(current);
+  return parts.map((entry, i) => ({entry, label: range + (parts.length > 1 ? ' ' + (i + 1) + '/' + parts.length : '')}));
 }
 function structuredExport(dates, slots) {
-  const available = dates.filter(date => date >= today());
-  if (!available.length) {
-    return '<details class="card"><summary>Structured AIに渡す</summary><p>今日または今後の週を選択してください。</p></details>';
-  }
-  const messages = available.flatMap(date => structuredDayMessages(date, slots).map((entry, index, parts) => ({
-    entry, label: date + (parts.length > 1 ? ' ' + (index + 1) + '/' + parts.length : '')
-  })));
+  const date = selected >= today() ? selected : today();
   return `<details class="card"><summary>Structured AIに渡す</summary>
-    <p class="fine">日付を選んでコピーしてください。1日分が2,000文字を超えた場合は、その日の番号順に貼り付けてください。</p>
-    <label for="structuredPart">コピーする日付</label>
+    <label for="structuredMode">出力単位</label>
+    <select id="structuredMode" onchange="refreshStructuredRange()"><option value="day">1日</option><option value="week">1週間</option><option value="month">1ヶ月</option></select>
+    <label for="structuredDate">対象日（週・月はこの日を含む期間）</label>
+    <input id="structuredDate" type="date" min="${today()}" value="${date}" onchange="refreshStructuredRange()">
+    <p class="fine">今日以降の予定を出力します。2,000文字を超えた場合は番号順に貼り付けてください。</p>
+    <div id="structuredOutput">${structuredOutput([date], dates.includes(date) ? slots : planSlots(date))}</div></details>`;
+}
+function refreshStructuredRange() {
+  const date = $('structuredDate').value;
+  const output = $('structuredOutput');
+  if (!date || date < today()) {
+    output.textContent = '今日以降の日付を選んでください。';
+    return;
+  }
+  const dates = structuredDates($('structuredMode').value, date);
+  const weeks = [...new Set(dates.map(weekStart))];
+  output.innerHTML = structuredOutput(dates, weeks.flatMap(week => planSlots(week)));
+}
+function structuredOutput(dates, slots) {
+  const messages = structuredMessages(dates, slots);
+  return `<label for="structuredPart">コピーする範囲</label>
     <select id="structuredPart" onchange="showStructuredPart()">
       ${messages.map(({entry,label}) => `<option value="${esc(entry).replaceAll('\n','&#10;')}">${esc(label)}（${entry.length}文字）</option>`).join('')}
     </select>
@@ -60,7 +89,7 @@ function structuredExport(dates, slots) {
     <textarea id="structuredText" rows="4" readonly>${esc(messages[0].entry)}</textarea>
     <div class="actions"><button type="button" onclick="copyStructuredPlan()">コピー</button></div>
     <p id="structuredCopyStatus" class="fine" role="status"></p>
-  </details>`;
+  `;
 }
 function showStructuredPart() {
   $('structuredText').value = $('structuredPart').value;
