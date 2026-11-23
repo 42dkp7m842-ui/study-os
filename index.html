@@ -19,30 +19,53 @@ function status(t){return t.status==='done'?'完了':t.status==='review'?'復習
 function todayView(){let c=capacity(selected),slots=planSlots(selected).filter(s=>s.date===selected),logs=state.logs.filter(l=>l.date===selected),actual=logs.reduce((s,l)=>s+l.minutes,0),w=weekly(selected),next=slots.find(s=>s.id&&(s.repeat||state.tasks.find(t=>t.id===s.id)?.status!=='done')&&!logs.some(l=>l.planStart===s.start&&l.taskId===s.id)),timer=state.timer,seconds=timer?Math.max(0,Math.floor((Date.now()-timer.started)/1000)):0;return `<h2>${selected===today()?'今日の実行':selected.slice(5)+' の学習'}</h2><div class="card"><div class="row"><button class="secondary" onclick="selected='${shift(selected,-1)}';render()">‹</button><b>${selected}（${names[dow(selected)]}）</b><button class="secondary" onclick="selected='${shift(selected,1)}';render()">›</button></div><label>勤務区分</label><select onchange="changeDayType(this.value)">${[...(selected===PLAN_START?[['start','学習開始日']]:[]),['office','出社'],['remote','リモート'],['saturday','土曜学習'],['holiday','祝日'],['off','学習なし'],['sunday','日曜予備']].map(([v,l])=>`<option value="${v}" ${typeOf(selected)===v?'selected':''}>${l}</option>`).join('')}</select>${dayProgress(slots,actual)}${movementPanel(selected)}</div><div class="card"><h3>次にやること</h3>${next?`<b>${esc(next.title)}</b><p class="muted">${next.start}〜${next.end}｜${next.subject}｜${next.kind==='emergency'?'日曜緊急予備':next.kind==='buffer'?'通常予備':'必須'}</p><div class="actions"><button onclick="startTimer('${next.id}','${next.subject}','${next.start}')">▶ この教材を開始</button><button class="secondary" onclick="go('tasks')">教材一覧</button></div>`:'<p class="muted">予定内の未完了タスクはありません。予定や教材を確認してください。</p>'}${timer?`<div class="timer" id="timerFace">${fmt(Math.floor(seconds/60))}</div><p class="muted" style="text-align:center">計測中：${esc(timer.title||state.tasks.find(t=>t.id===timer.taskId)?.name||'学習')}</p><div class="actions"><button onclick="stopTimer()">■ 終了して記録</button><button class="secondary" onclick="cancelTimer()">計測取消</button></div>`:''}</div><div class="card"><h3>今日の時間割</h3>${slots.length?slots.map(s=>`<div class="slot ${s.kind}"><div class="row"><b>${s.start}–${s.end}</b><span class="tag ${s.kind==='emergency'?'warning':''}">${s.kind==='emergency'?'緊急':s.kind==='buffer'?'予備':'必須'}</span></div><small>${esc(s.title)}｜${s.subject}</small></div>`).join(''):'<p class="muted">学習予定はありません。</p>'}<div class="actions"><button class="secondary" onclick="go('week')">予定を追加・変更</button></div></div><div class="card"><h3>手動で学習記録</h3><label>教材</label><select id="logTask">${manualTasks(slots).map(t=>`<option value="${t.value||t.id}">${esc(t.name)}</option>`).join('')}</select><div class="grid"><div><label>実績（分）</label><input id="logMinutes" type="number" min="1" value="30"></div><div><label>正答率（任意・%）</label><input id="logAccuracy" type="number" min="0" max="100" placeholder="未入力可"></div></div><label>開始できなかった理由・気づき（任意）</label><input id="logReason" placeholder="例：スマホを見て開始が遅れた"><div class="actions"><button onclick="addLog()">実績を保存</button></div></div><div class="notice ${w.sunUsed?'':'good'}">${w.sunUsed?`今週は日曜08:00〜11:00の空き時間のうち${fmt(w.sunUsed)}を緊急予備として使用予定です。`:'日曜の緊急予備は現在未使用です。'} 予定変更は「予定」から登録してください。</div>`}
 function startTimer(id,subject,planStart){if(state.timer&&!confirm('現在の計測を破棄して開始しますか？'))return;mutate(()=>state.timer={taskId:id,subject,planStart,title:planSlots(selected).find(s=>s.date===selected&&s.start===planStart)?.title,started:Date.now()})}function cancelTimer(){if(confirm('計測を取り消しますか？'))mutate(()=>state.timer=null)}function stopTimer(){let t=state.timer;if(!t)return;let n=Math.max(1,Math.round((Date.now()-t.started)/MIN));mutate(()=>{state.logs.push({id:uid(),date:today(),taskId:t.taskId,planStart:t.planStart,title:t.title,subject:t.subject,minutes:n,accuracy:null,reason:'',created:Date.now()});state.timer=null})}function addLog(){let t=manualTasks(planSlots(selected).filter(s=>s.date===selected)).find(x=>(x.value||x.id)===$('logTask').value),n=+$('logMinutes').value,raw=$('logAccuracy').value,accuracy=raw===''?null:+raw;if(!t||!Number.isFinite(n)||n<=0||n>1000||accuracy!==null&&(accuracy<0||accuracy>100))return alert('学習時間と正答率を確認してください');mutate(()=>{state.logs.push({id:uid(),date:selected,taskId:t.id,title:t.title||t.name,planStart:t.planStart,subject:t.subject,minutes:n,accuracy,reason:$('logReason').value.trim(),created:Date.now()});const item=state.tasks.find(x=>x.id===t.id);if(item&&accuracy!==null){item.mastery=accuracy;if(accuracy<80){item.status='review';item.due=shift(selected,accuracy<60?1:3)}else{item.status='done';item.due=''}}})}
 
-function structuredPlanText(dates, slots, from) {
-  const rows = slots.filter(slot => slot.date >= from).map(slot => {
+
+const STRUCTURED_COPY_LIMIT = 100;
+function structuredDayMessages(date, slots) {
+  const heading = date + ' 学習予定。重複は追加せず変更候補を提示：';
+  const rows = slots.filter(slot => slot.date === date).map(slot => {
+    const label = slot.start + '〜' + slot.end + ' ' + slot.subject + ' ';
     const title = slot.title.replace(/\s+/g, ' ').trim();
-    return `${slot.date} ${slot.start}〜${slot.end} ｜ ${slot.subject} ｜ ${title}`;
+    const room = STRUCTURED_COPY_LIMIT - heading.length - label.length - 1;
+    return label + (title.length <= room ? title : title.slice(0, room - 1) + '…');
   });
-  return [
-    `Study OS｜${dates[0]}〜${dates[6]}（日本時間）`,
-    `下記は修正後の学習予定です。対象は${from}〜${dates[6]}の未完了の学習予定です。`,
-    '既存のStudy OS由来の学習予定と照合し、一致する予定は追加せず、新規追加・移動・変更・削除の候補を確認用に提示してください。完了済みの学習や、それ以外の予定は変更しないでください。',
-    '既存予定を編集できない場合は、変更・取消が必要な旧予定を一覧にしてください。重複や他の予定との時間の重なりがある場合は、登録前に確認してください。',
-    '',
-    ...(rows.length ? rows : ['対象期間の学習予定はありません。'])
-  ].join('\n');
+  if (!rows.length) return [date + ' 学習枠なし。Study OS由来の未完了予定があれば取消候補を提示。'];
+  const messages = [];
+  let current = heading;
+  for (const row of rows) {
+    if (current.length + row.length + 1 > STRUCTURED_COPY_LIMIT) {
+      messages.push(current);
+      current = heading;
+    }
+    current += '\n' + row;
+  }
+  messages.push(current);
+  return messages;
 }
 function structuredExport(dates, slots) {
-  const from = dates[0] > today() ? dates[0] : today();
-  const text = from <= dates[6] ? structuredPlanText(dates, slots, from) : '';
-  return `<details class="card"><summary>Structured AIに渡す</summary>${text
-    ? `<p class="fine">表示中の週の今日以降の学習予定です。コピーしてStructured AIに貼り付け、変更内容を確認してください。</p>
-      <label for="structuredText">Structured AI用のテキスト</label>
-      <textarea id="structuredText" rows="6" readonly>${esc(text)}</textarea>
-      <div class="actions"><button type="button" onclick="copyStructuredPlan()">コピー</button></div>
-      <p id="structuredCopyStatus" class="fine" role="status"></p>`
-    : '<p class="fine">今日または今後の週を選択してください。</p>'}</details>`;
+  const available = dates.filter(date => date >= today());
+  if (!available.length) {
+    return '<details class="card"><summary>Structured AIに渡す</summary><p>今日または今後の週を選択してください。</p></details>';
+  }
+  const messages = available.flatMap(date => structuredDayMessages(date, slots).map((entry, index, group) => ({
+    label: date + (group.length > 1 ? '（' + (index + 1) + '/' + group.length + '）' : ''),
+    entry
+  })));
+  return `<details class="card"><summary>Structured AIに渡す</summary>
+    <p class="fine">日付と番号を選び、1つずつStructured AIに貼り付けてください。既存枠の取消が必要なときは、対象の予定を確認してください。</p>
+    <label for="structuredPart">日付・分割番号</label>
+    <select id="structuredPart" onchange="showStructuredPart()">
+      ${messages.map(({entry,label}) => `<option value="${esc(entry).replaceAll('\n','&#10;')}">${esc(label)}（${entry.length}文字）</option>`).join('')}
+    </select>
+    <label for="structuredText">Structured AI用のテキスト</label>
+    <textarea id="structuredText" rows="4" readonly>${esc(messages[0].entry)}</textarea>
+    <div class="actions"><button type="button" onclick="copyStructuredPlan()">コピー</button></div>
+    <p id="structuredCopyStatus" class="fine" role="status"></p>
+  </details>`;
+}
+function showStructuredPart() {
+  $('structuredText').value = $('structuredPart').value;
+  $('structuredCopyStatus').textContent = '';
 }
 async function copyStructuredPlan() {
   const field = $('structuredText');
