@@ -42,14 +42,16 @@ function structuredMessages(dates, slots) {
     );
     if (!rows.length) rows.push('学習枠なし');
     if (hasBath(date)) rows.push('22:00〜22:30 お風呂（固定）');
-    let prefix = '\n' + date;
+    const reset = '\n' + date + '【入替】';
+    const append = '\n' + date + '【追記】';
+    let prefix = reset;
     for (const row of rows) {
-      const room = STRUCTURED_COPY_LIMIT - header.length - date.length - 2;
+      const room = STRUCTURED_COPY_LIMIT - header.length - reset.length - 1;
       const line = row.length <= room ? row : row.slice(0, room - 1) + '…';
       if (current.length + prefix.length + 1 + line.length > STRUCTURED_COPY_LIMIT) {
         parts.push(current);
         current = header;
-        prefix = '\n' + date;
+        prefix = prefix === reset ? reset : append;
       }
       current += prefix + '\n' + line;
       prefix = '';
@@ -65,7 +67,7 @@ function structuredExport(dates, slots) {
     <select id="structuredMode" onchange="refreshStructuredRange()"><option value="day">1日</option><option value="week">1週間</option><option value="month">1ヶ月</option></select>
     <label for="structuredDate">対象日（週・月はこの日を含む期間）</label>
     <input id="structuredDate" type="date" min="${today()}" value="${date}" onchange="refreshStructuredRange()">
-    <p class="fine">今日以降の予定を出力します。2,000文字を超えた場合は番号順に貼り付けてください。</p>
+    <p class="fine">対象日の予定をすべて入れ替えます。Structuredだけにある予定も削除対象です。分割された場合は番号順に各パートを1回ずつ貼り付けてください。</p>
     <div id="structuredOutput">${structuredOutput([date], dates.includes(date) ? slots : planSlots(date))}</div></details>`;
 }
 function refreshStructuredRange() {
