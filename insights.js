@@ -31,7 +31,7 @@ function calendarView() {
   const dates = [];
   for (let date=first; date.startsWith(month); date=shift(date,1)) {
     const min=totals[date]||0;
-    dates.push(`<button class="cal-day ${min?'recorded':''}" aria-pressed="${date===selected}" aria-label="${date}、実績${min}分" onclick="selectDate('${date}')"><b>${Number(date.slice(8))}</b><small>${min ? min+'分' : '　'}</small></button>`);
+    dates.push(`<button class="cal-day ${min?'recorded':''}" aria-pressed="${date===selected}" aria-label="${date}、実績${min}分" onclick="selectDate('${date}')"><b>${Number(date.slice(8))}</b><small>${min ? min+'分' : dayItems(date).filter(e=>exercise(e.category)).map(e=>e.category==='筋トレ'?'筋':'有').join('')||'　'}</small></button>`);
   }
   const logs=state.logs.filter(l=>l.date===selected);
   const events=state.events.filter(e=>e.date===selected);
@@ -40,8 +40,8 @@ function calendarView() {
     <div class="actions"><button class="secondary" onclick="selectDate(today())">今日に戻る</button></div></section>
     <section class="card"><div class="row"><h3>${selected.slice(5)}（${names[dow(selected)]}）</h3><b>${fmt(loggedMinutes(logs))}</b></div>
     ${logs.map(l=>`<div class="line"><b>${esc(l.title||state.tasks.find(t=>t.id===l.taskId)?.name||l.subject)}</b><small>${esc(l.subject)} · ${Number(l.minutes)}分${l.accuracy!=null?' · 正答率 '+Number(l.accuracy)+'%':''}</small>${l.reason?'<p>'+esc(l.reason)+'</p>':''}</div>`).join('') || '<p class="muted">学習記録はありません。</p>'}
-    ${events.map(e=>`<p>予定　${esc(e.start)}–${esc(e.end)}　${esc(e.name)}</p>`).join('')}
-    <div class="actions"><button onclick="go('today')">この日の記録を開く</button><button class="secondary" onclick="go('review')">この週を分析</button></div></section>`;
+    ${dayEditor(selected)}
+    <div class="actions"><button onclick="go('day')">この日の記録を開く</button><button class="secondary" onclick="go('review')">この週を分析</button></div></section>`;
 }
 function weeklyCharts(week,logs) {
   const targets=planTargets(week.dates[0]);

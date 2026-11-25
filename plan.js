@@ -67,22 +67,29 @@ function orderedPlanTasks(subject) {
   }
   return ordered;
 }
-function weeklyRecovery(cap, sun, sunParts) {
+function weeklyRecovery(cap, sun, sunParts, carry) {
   const slots=[], lost=[];
   for(const day of cap)for(const block of day.slots){
     if(block.kind!=='required')continue;
     for(const [start,end] of block.parts)slots.push({date:day.date,start,end,subject:block.subject,kind:block.kind});
-    if(block.minutes>block.free)lost.push({subject:block.subject,minutes:block.minutes-block.free});
+
+  }
+  const targets=planTargets(sun);
+  for(const subject of ['FAR','国徴']){
+    const allocated=slots.filter(s=>s.subject===subject).reduce((n,s)=>n+s.end-s.start,0);
+    const deficit=Math.max(0,targets[subject]+(carry[subject]||0)-allocated);
+    if(deficit)lost.push({subject,minutes:deficit});
   }
   const lostMinutes=lost.reduce((total,block)=>total+block.minutes,0);
-  function recover(date, parts, kind) {
+  function recover(date, parts, kind, limit=Infinity) {
     let used=0;
-    for(const [start,end] of parts){
+    const excluded=Object.values(state.agendaEdits||{}).filter(e=>e.recovery?.date===date).map(e=>[mins(e.recovery.start),mins(e.recovery.end)]);
+    for(const [start,end] of parts.flatMap(([a,b])=>gaps(excluded,a,b))){
       let cursor=start;
-      while(cursor<end){
+      while(cursor<end&&used<limit){
         const need=lost.find(block=>block.minutes>0 && date<(block.subject==='FAR'?state.settings.farExam:taxEnd()));
         if(!need)break;
-        const minutes=Math.min(end-cursor,need.minutes);
+        const minutes=Math.min(end-cursor,need.minutes,limit-used);
         slots.push({date,start:cursor,end:cursor+minutes,subject:need.subject,kind});
         cursor+=minutes;
         need.minutes-=minutes;
@@ -92,15 +99,15 @@ function weeklyRecovery(cap, sun, sunParts) {
     return used;
   }
   let availableUsed=0, bufferUsed=0;
-  for(const day of cap)availableUsed+=recover(day.date,availableTimeParts(day.date),'available');
-  for(const day of cap)for(const block of day.slots){
-    if(block.kind==='buffer')bufferUsed+=recover(day.date,block.parts,'buffer');
+  for(const day of cap.slice(0,6))availableUsed+=recover(day.date,availableTimeParts(day.date),'available');
+  for(const day of cap.slice(0,6))for(const block of day.slots){
+    if(block.kind==='buffer')bufferUsed+=recover(day.date,block.parts,'buffer',180-bufferUsed);
   }
   const occupied=slots.filter(slot=>slot.date===sun&&slot.kind==='available').map(slot=>[slot.start,slot.end]);
   const remainingSun=sunParts.flatMap(([start,end])=>freeParts(sun,start,end,occupied));
   const sunUsed=recover(sun,remainingSun,'emergency');
   const uncovered=lostMinutes-availableUsed-bufferUsed-sunUsed;
-  return {slots,lost:lostMinutes,availableUsed,bufferUsed,sunUsed,uncovered};
+  return {remaining:Object.fromEntries(lost.map(b=>[b.subject,b.minutes])),slots,lost:lostMinutes,availableUsed,bufferUsed,sunUsed,uncovered};
 }
 function weekIntervals(date) {
   return weekly(date).slots.sort((a,b)=>a.date.localeCompare(b.date)||a.start-b.start);
@@ -257,4 +264,14 @@ function taxRoadmap(){
     ${[[shift(state.settings.farExam,1),'FAR後〜6/6：週8時間'],['2027-06-07','6/7〜7/4：週16時間'],['2027-07-05','7/5以降：週20時間']].map(([date,label])=>`<p><button class="secondary" onclick="selected='${date}';go('week')">${label}</button></p>`).join('')}
     <p>理論は見出しと要件を白紙から再現し、テーマ問題で事例に適用。過去問は直近に登録した5年分を週1回、答案作成と採点に分けます。</p>
     <p>日程未定の間は7月末に過去問を終え、8月は復習を継続します。「設定」で試験日を入力すると過去問の日程と最終学習日が変わります。</p></details>`;
+}
+function weekly(date){
+  const end=weekStart(date);
+  if(weekCache.has(end))return weekCache.get(end);
+  let carry={FAR:0,国徴:0};
+  for(let w=end<weekStart(PLAN_START)?end:weekStart(PLAN_START);w<=end;w=shift(w,7)){
+    if(!weekCache.has(w))weekCache.set(w,computeWeek(w,carry));
+    carry=weekCache.get(w).remaining;
+  }
+  return weekCache.get(end);
 }
