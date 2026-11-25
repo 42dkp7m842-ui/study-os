@@ -83,8 +83,34 @@ function standard(date){
   if(!confirm(date+' の個別編集・手動追加・実施情報を解除します。この日に関係する振替も元に戻しますか？'))return;
   agendaWrite(()=>{for(const [id,e] of Object.entries(state.agendaEdits))if(e.date===date||e.origin===date)delete state.agendaEdits[id];});render();
 }
+function conflictsFor(item){
+  return dayItems(item.date).filter(other=>other.id!==item.id&&other.start<item.end&&other.end>item.start&&
+    (!studyCategory(other.category)||studyCategory(item.category)||other.custom||other.legacy));
+}
 function restoreItem(id){
-  if(agendaWrite(()=>delete state.agendaEdits[id]))render();
+  const old=state.agendaEdits?.[id];
+  if(!old)return false;
+  const manual=id.startsWith('manual/');
+  const original=manual?(old.deleted?{...old,deleted:false}:old.initial):null;
+  // Preview the standard occurrence against current commitments before saving.
+  const originalEdits=state.agendaEdits;
+  state.agendaEdits={...originalEdits};
+  delete state.agendaEdits[id];
+  let target,conflicts;
+  try{
+    target=original||dayItems(old.origin).find(e=>e.id===id);
+    conflicts=target?conflictsFor(target):[];
+  }finally{state.agendaEdits=originalEdits;}
+  if(conflicts.length){
+    alert('復元先で重複：'+conflicts.map(e=>e.start+'〜'+e.end+' '+e.name).join('、')+'。先に重なる予定を編集してください。');return false;
+  }
+  if(manual&&!original)return false;
+  const ok=agendaWrite(()=>{
+    if(manual)state.agendaEdits[id]={...original,initial:old.initial,custom:true};
+    else delete state.agendaEdits[id];
+  });
+  if(ok)render();
+  return ok;
 }
 function dayEditor(date){
   const items=dayItems(date),exceptions=Object.values(state.agendaEdits||{}).filter(e=>e.origin===date&&(e.deleted||e.date!==date));
@@ -94,14 +120,12 @@ function dayEditor(date){
   for(const [i,e] of items.entries())for(const other of items.slice(i+1)){
     if(e.end>other.start&&e.start<other.end&&(!studyCategory(e.category)||e.custom)&&(!studyCategory(other.category)||other.custom))warnings.push(esc(e.name)+'・'+esc(other.name)+' '+other.start+'〜'+(other.end<e.end?other.end:e.end));
   }
-  const rows=items.map((e,i)=>'<button type="button" class="agenda-row" data-category="'+esc(e.category)+'" onclick="editItem(\''+date+'\','+i+')"><b>'+esc(e.start)+'–'+esc(e.end)+'</b> '+esc(e.name)+'<small>'+esc(e.category)+' · '+(e.deleted?'解除':e.fixed?'固定':'固定解除')+' · ' +esc(e.status||'予定')+'</small></button>').join('');
+  const rows=items.map((e,i)=>'<button type="button" class="agenda-row secondary" data-category="'+esc(e.category)+'" onclick="editItem(\''+date+'\','+i+')"><b>'+esc(e.start)+'–'+esc(e.end)+'</b> '+esc(e.name)+'<small>'+esc(e.category)+' · '+(e.deleted?'解除':e.fixed?'固定':'固定解除')+' · ' +esc(e.status||'予定')+'</small></button>').join('');
   return '<section class="card"><details><summary>'+date+'（'+names[dow(date)]+'）の予定編集・空き時間</summary>'+rows+'<p class="fine">空き '+parts.map(([a,b])=>hh(a)+'–'+hh(b)).join('、')+'</p><p>翌朝までの睡眠 '+fmt(sleep)+'</p>'+(sleep<420?'<p class="notice">7時間に不足します。就寝を'+fmt(420-sleep)+'早めるか、翌朝の起床を遅らせ、重なる運動・入浴の時間を編集してください。</p>':'')+warnings.map(w=>'<p class="notice">重複 '+w+'。予定をタップして調整してください。</p>').join('')+'<div class="actions"><button onclick="editItem(\''+date+'\')">予定を追加</button><button class="secondary" onclick="standard(\''+date+'\')">標準に戻す</button>'+(state.agendaUndo!=null?'<button class="secondary" onclick="agendaUndo()">直前の編集を取消</button>':'')+'</div>'+exceptions.map((e,i)=>'<p>'+esc(e.name)+' · '+(e.deleted?'今回解除':'振替先 '+e.date)+' <button onclick="restoreException(\''+date+'\','+i+')">復元</button></p>') .join('')+'</details></section>';
 }
 function restoreException(date,i){
   const e=Object.values(state.agendaEdits||{}).filter(e=>e.origin===date&&(e.deleted||e.date!==date))[i];if(!e)return;
-  if(e.deleted&&e.id.startsWith('manual/')){
-    if(agendaWrite(()=>{state.agendaEdits[e.id]={...e,deleted:false};}))render();
-  }else restoreItem(e.id);
+  restoreItem(e.id);
 }
 function editItem(date,i,generated){
   const e=generated||(i==null?{id:'manual/'+uid(),origin:date,date,name:'',category:'その他',start:'18:00',end:'19:00',fixed:true,manual:true}:dayItems(date)[i]);
@@ -122,7 +146,7 @@ function editItem(date,i,generated){
   function action(label,fn){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=label;b.onclick=fn;form.append(b);}
   if(i!=null||generated){
     action('今回のみ削除',()=>{if(agendaWrite(()=>state.agendaEdits[e.id]={...e,deleted:true}))finish();});
-    if(state.agendaEdits?.[e.id]&&!e.id.startsWith('manual/'))action('標準予定に復元',()=>{if(agendaWrite(()=>delete state.agendaEdits[e.id]))finish();});
+    if(state.agendaEdits?.[e.id]&&!e.id.startsWith('manual/'))action('標準予定に復元',()=>{if(restoreItem(e.id))finish();});
   }
   form.onsubmit=ev=>{
     ev.preventDefault();
@@ -133,8 +157,9 @@ function editItem(date,i,generated){
     data.actual=f.actual.value===''?null:Number(f.actual.value);
     if(exercise(data.category)&&data.status==='実施済'&&data.actual==null){$('agendaWarning').textContent='移動・着替えを除く実際の運動時間を入力してください。';return;}
     const changed=i==null||['start','end','date','category'].some(k=>data[k]!==e[k]);
-    const conflicts=dayItems(data.date).filter(x=>x.id!==e.id&&x.start<data.end&&x.end>data.start&&(!studyCategory(x.category)||studyCategory(data.category)||x.custom||x.legacy));
+    const conflicts=conflictsFor(data);
     if(changed&&conflicts.length){$('agendaWarning').textContent='重複 '+conflicts.map(x=>x.start+'〜'+x.end+' '+x.name).join('、');return;}
+    if(data.id.startsWith('manual/')&&!data.initial)data.initial={...data};
     if(agendaWrite(()=>state.agendaEdits[e.id]={...data,custom:true}))finish();
   };
   dialog.oncancel=()=>dialog.remove();document.body.append(dialog);dialog.showModal();hints();
@@ -167,7 +192,7 @@ function timetable(date,slots){
     rows.push({...slot,name:block?.custom&&block.category!=='学習予備'?block.name+'｜'+slot.title:slot.title,category:slot.subject,label:({required:'学習枠',buffer:'通常予備',emergency:'日曜緊急予備',available:'振替'})[slot.kind],index});
   }
   for(const [a,b] of gaps(rows.map(r=>[mins(r.start),mins(r.end)])))rows.push({start:hh(a),end:hh(b),name:'空き時間'});
-  return rows.sort((a,b)=>a.start.localeCompare(b.start)).map(r=>r.category?'<button class="agenda-row" data-category="'+esc(r.category)+'" onclick="'+(r.index>=0?'editItem(\''+date+'\','+r.index+')':'editRecovery(\''+date+'\',\''+r.start+'\',\''+r.end+'\',\''+r.subject+'\')')+'"><b>'+r.start+'–'+r.end+'</b> '+esc(r.name)+'<small>'+esc(r.category)+' · '+esc(r.label)+'</small></button>':'<p class="fine">'+r.start+'–'+r.end+' 空き時間</p>').join('');
+  return rows.sort((a,b)=>a.start.localeCompare(b.start)).map(r=>r.category?'<button class="agenda-row secondary" data-category="'+esc(r.category)+'" onclick="'+(r.index>=0?'editItem(\''+date+'\','+r.index+')':'editRecovery(\''+date+'\',\''+r.start+'\',\''+r.end+'\',\''+r.subject+'\')')+'"><b>'+r.start+'–'+r.end+'</b> '+esc(r.name)+'<small>'+esc(r.category)+' · '+esc(r.label)+'</small></button>':'<p class="fine">'+r.start+'–'+r.end+' 空き時間</p>').join('');
 }
 function editRecovery(date,start,end,subject){
   editItem(date,null,{id:[date,'recovery',start,end,subject].join('/'),date,origin:date,start,end,name:subject,category:subject,fixed:true,recovery:{date,start,end}});
