@@ -107,9 +107,22 @@ function weeklyRecovery(cap, sun, sunParts, carry) {
   }
   const occupied=slots.filter(slot=>slot.date===sun&&slot.kind==='available').map(slot=>[slot.start,slot.end]);
   const remainingSun=sunParts.flatMap(([start,end])=>freeParts(sun,start,end,occupied));
-  const sunUsed=recover(sun,remainingSun,'emergency');
-  const uncovered=lostMinutes-availableUsed-bufferUsed-sunUsed;
-  return {remaining:Object.fromEntries(lost.map(b=>[b.subject,b.minutes])),slots,lost:lostMinutes,availableUsed,bufferUsed,sunUsed,uncovered};
+  let sundayBookkeeping=null, recoveryParts=remainingSun;
+  const id=sun+'/bookkeeping';
+  if(sun>=accountingStart && !state.agendaEdits?.[id] && lost.some(b=>b.minutes>0&&sun<(b.subject==='FAR'?state.settings.farExam:taxEnd()))){
+    const total=remainingSun.reduce((n,[a,b])=>n+b-a,0);
+    const fit=remainingSun.find(([a,b])=>b-a>=20);
+    if(total>20&&fit){
+      const start=fit[0],end=start+20;
+      sundayBookkeeping={id,date:sun,origin:sun,start:hh(start),end:hh(end),name:'スタディング｜簿記論の個別問題 2問',category:'簿記論',fixed:true};
+      recoveryParts=remainingSun.flatMap(([a,b])=>gaps([[start,end]],a,b));
+    }
+  }
+  const recovered=recover(sun,recoveryParts,'emergency');
+  if(!recovered)sundayBookkeeping=null;
+  const sunUsed=recovered+(sundayBookkeeping?20:0);
+  const uncovered=lostMinutes-availableUsed-bufferUsed-recovered;
+  return {sundayBookkeeping,remaining:Object.fromEntries(lost.map(b=>[b.subject,b.minutes])),slots,lost:lostMinutes,availableUsed,bufferUsed,sunUsed,uncovered};
 }
 function weekIntervals(date) {
   return weekly(date).slots.sort((a,b)=>a.date.localeCompare(b.date)||a.start-b.start);

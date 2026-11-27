@@ -12,7 +12,7 @@ function baseDay(date){
   add('bath',office&&sport?'22:30':'22:00',office&&sport?'23:00':'22:30','入浴','お風呂');
   add('wake','00:00','06:00','睡眠'); add('bed','23:00','24:00','睡眠');
   if(office||type==='remote')add('work','09:00','18:00','仕事');
-  if(date>=accountingStart){
+  if(date>=accountingStart&&dow(date)!==0){
     const start=type==='remote'?'08:30':'07:00';
     add('bookkeeping',start,hh(mins(start)+20),'簿記論','スタディング｜簿記論の個別問題 2問');
   }
@@ -26,24 +26,31 @@ function baseDay(date){
   }
   return list;
 }
-function dayItems(date){
+function storedDayItems(date){
   const edits=state.agendaEdits||{};
   const events=state.events.filter(e=>e.date===date).map(e=>({...e,id:'event/'+e.id,category:e.category||'その他',fixed:true,manual:true}));
   const moves=(state.blockMoves||[]).filter(m=>m.date===date).map(m=>({...m,id:m.origin+'/legacy/'+m.key,name:m.subject,category:m.kind==='buffer'?'学習予備':m.subject,fixed:true,legacy:true}));
   return [...baseDay(date),...events,...moves].filter(e=>!edits[e.id]).concat(Object.values(edits).filter(e=>!e.deleted&&e.date===date)).filter(e=>date<accountingStart||e.category!=='国徴').sort((a,b)=>a.start.localeCompare(b.start));
 }
+function dayItems(date){
+  const items=storedDayItems(date);
+  if(date<accountingStart||dow(date)!==0)return items;
+  const booking=weekly(date).sundayBookkeeping;
+  if(booking)items.push(booking);
+  return items.sort((a,b)=>a.start.localeCompare(b.start));
+}
 function studyBlocks(date){
-  return dayItems(date).filter(e=>studyCategory(e.category)).map(e=>[e.start,e.end,e.category==='学習予備'?'予備':e.category,e.category==='学習予備'?'buffer':'required']);
+  return storedDayItems(date).filter(e=>studyCategory(e.category)).map(e=>[e.start,e.end,e.category==='学習予備'?'予備':e.category,e.category==='学習予備'?'buffer':'required']);
 }
 function usableStudyParts(date,start,end,subject,kind){
-  const entries=dayItems(date).filter(e=>studyCategory(e.category));
+  const entries=storedDayItems(date).filter(e=>studyCategory(e.category));
   const chosen=entries.find(e=>e.start===start&&e.end===end&&(kind==='buffer'?e.category==='学習予備':e.category===subject));
   const priority=e=>(e.custom||e.legacy?0:2)+(e.category==='学習予備'?1:0);
   const earlier=entries.filter(e=>chosen&&e.id!==chosen.id&&(priority(e)<priority(chosen)||priority(e)===priority(chosen)&&e.id<chosen.id));
   return freeParts(date,mins(start),mins(end),earlier.map(e=>[mins(e.start),mins(e.end)]));
 }
 function fixedParts(date){
-  return dayItems(date).filter(e=>!studyCategory(e.category)).map(e=>[mins(e.start),mins(e.end)]);
+  return storedDayItems(date).filter(e=>!studyCategory(e.category)).map(e=>[mins(e.start),mins(e.end)]);
 }
 function gaps(items,start=0,end=1440){
   let cursor=start;const out=[];
