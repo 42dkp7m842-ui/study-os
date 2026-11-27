@@ -48,7 +48,7 @@ function weeklyCharts(week,logs) {
   const totals=week.dates.map(date=>loggedMinutes(logs.filter(l=>l.date===date)));
   const max=Math.max(1,...totals);
   return `<section class="progress-row">${progressRow('週間達成率',loggedMinutes(logs),targets.FAR+targets.国徴)}
-    ${Object.entries(targets).map(([subject,target])=>progressRow(subject,loggedMinutes(logs.filter(l=>l.subject===subject)),target)).join('')}
+    ${Object.entries(targets).filter(([,n])=>n>0).map(([subject,target])=>progressRow(subject,loggedMinutes(logs.filter(l=>l.subject===subject)),target)).join('')}
     <h3>曜日別の学習時間</h3><div class="chart">${totals.map((minutes,i)=>`<div><small>${minutes}分</small><div class="column"><i style="height:${minutes/max*100}%"></i></div><b>${names[dow(week.dates[i])]}</b></div>`).join('')}</div></section>`;
 }
 function reviewArchive() {

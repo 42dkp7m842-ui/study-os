@@ -19,6 +19,7 @@ function migratePlan(data) {
   return data;
 }
 function planTargets(date) {
+  if(weekDays(date)[6]>=accountingStart)return {FAR:weekStart(date)<state.settings.farExam?1260:0,国徴:0};
   if(weekStart(date)<weekStart(PLAN_START))return {FAR:0,国徴:0};
   if(weekStart(date)===weekStart(PLAN_START))return {FAR:75,国徴:35};
   if(weekDays(date).some(taxOnlyDay)){
@@ -77,6 +78,7 @@ function weeklyRecovery(cap, sun, sunParts, carry) {
   const targets=planTargets(sun);
   for(const subject of ['FAR','国徴']){
     const allocated=slots.filter(s=>s.subject===subject).reduce((n,s)=>n+s.end-s.start,0);
+    if(subject==='国徴'&&sun>=accountingStart)continue;
     const deficit=Math.max(0,targets[subject]+(carry[subject]||0)-allocated);
     if(deficit)lost.push({subject,minutes:deficit});
   }
@@ -87,7 +89,7 @@ function weeklyRecovery(cap, sun, sunParts, carry) {
     for(const [start,end] of parts.flatMap(([a,b])=>gaps(excluded,a,b))){
       let cursor=start;
       while(cursor<end&&used<limit){
-        const need=lost.find(block=>block.minutes>0 && date<(block.subject==='FAR'?state.settings.farExam:taxEnd()));
+        const need=lost.find(block=>block.minutes>0 && (block.subject!=='国徴'||date<accountingStart) && date<(block.subject==='FAR'?state.settings.farExam:taxEnd()));
         if(!need)break;
         const minutes=Math.min(end-cursor,need.minutes,limit-used);
         slots.push({date,start:cursor,end:cursor+minutes,subject:need.subject,kind});
@@ -128,7 +130,7 @@ function roadmap(){
   const dates=mockDays();
   return `<details class="card"><summary>1月からFAR受験までの計画</summary>
     ${farPhases.map(([d,title])=>`<p><button class="secondary" onclick="selected='${d}';go('week')">${Number(d.slice(5,7))}月の予定</button>　${title}</p>`).join('')}
-    <p>模試予定：${dates.join('・')}（各240分、学習枠に分割）。国徴は週2時間で理論の再現と反復。</p>
+    <p>模試予定：${dates.join('・')}（各240分、学習枠に分割）。</p>
     <p>復習は初回の学習記録日（未記録は予定日）から1・3・7・14日後。各15・20・25・30分を同じ科目の枠で確保し、空きが足りない分は次の枠へ送ります。</p></details>`;
 }
 function planSlots(date) {
@@ -214,7 +216,7 @@ function refreshApp(){
 
 function manualTasks(slots){
   const planned=slots.filter(s=>s.id).map(s=>({id:s.id,value:'slot-'+s.start,name:s.start+' '+s.title,title:s.title,planStart:s.start,subject:s.subject}));
-  return planned.concat(state.tasks);
+  return planned.concat(state.tasks.filter(t=>selected<accountingStart||t.subject!=='国徴'),selected>=accountingStart?[{id:'studying-boki',subject:'簿記論',name:'スタディング｜簿記論 個別問題'},{id:'studying-zai',subject:'財務諸表論',name:'スタディング｜財務諸表論 理論暗記ツール'}]:[]);
 }
 
 function taxOnlyDay(date){return date>state.settings.farExam;}
