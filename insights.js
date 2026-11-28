@@ -12,7 +12,8 @@ function progressRow(label, actual, target) {
 }
 function dayProgress(slots, actual) {
   const target = slots.reduce((sum, slot) => sum + mins(slot.end) - mins(slot.start), 0);
-  return progressRow('この日の達成率', actual, target);
+  const extra=dayItems(selected).filter(e=>accountingSubjects.includes(e.category)).reduce((n,e)=>n+mins(e.end)-mins(e.start),0);
+  return progressRow('この日の達成率', actual, target+extra);
 }
 function calendarMonth(offset) {
   const month = new Date(selected.slice(0,7)+'-01T12:00:00');
@@ -44,10 +45,14 @@ function calendarView() {
     <div class="actions"><button onclick="go('day')">この日の記録を開く</button><button class="secondary" onclick="go('review')">この週を分析</button></div></section>`;
 }
 function weeklyCharts(week,logs) {
-  const targets=planTargets(week.dates[0]);
+  const targets={...planTargets(week.dates[0])};
+  for(const subject of accountingSubjects){
+    const minutes=week.dates.flatMap(dayItems).filter(e=>e.category===subject).reduce((n,e)=>n+mins(e.end)-mins(e.start),0);
+    if(minutes)targets[subject]=minutes;
+  }
   const totals=week.dates.map(date=>loggedMinutes(logs.filter(l=>l.date===date)));
   const max=Math.max(1,...totals);
-  return `<section class="progress-row">${progressRow('週間達成率',loggedMinutes(logs),targets.FAR+targets.国徴)}
+  return `<section class="progress-row">${progressRow('週間達成率',loggedMinutes(logs),Object.values(targets).reduce((a,b)=>a+b,0))}
     ${Object.entries(targets).filter(([,n])=>n>0).map(([subject,target])=>progressRow(subject,loggedMinutes(logs.filter(l=>l.subject===subject)),target)).join('')}
     <h3>曜日別の学習時間</h3><div class="chart">${totals.map((minutes,i)=>`<div><small>${minutes}分</small><div class="column"><i style="height:${minutes/max*100}%"></i></div><b>${names[dow(week.dates[i])]}</b></div>`).join('')}</div></section>`;
 }

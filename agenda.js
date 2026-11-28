@@ -85,7 +85,7 @@ function agendaWrite(fn){
   state.agendaEdits??={};fn();
   const old=state.agendaUndo;
   state.agendaUndo=before;
-  if(!save()){state.agendaEdits=JSON.parse(before);state.agendaUndo=old;return false;}
+  if(!save()){state.agendaEdits=JSON.parse(before);state.agendaUndo=old;syncStudyLogs();return false;}
   return true;
 }
 function agendaUndo(){
@@ -237,9 +237,14 @@ function saveTimetableStatus(field){
   }else{
     state.scheduleStatus??={};
     const previous=state.scheduleStatus[key];
+    if(value==='実施済'&&key.startsWith('[')){
+      const slot=planSlots(date).find(s=>s.date===date&&lessonStatusKey(date,s)===key);
+      if(slot){state.lessonRecords??={};state.lessonRecords[key]=lessonRecord(date,slot);}
+    }
     state.scheduleStatus[key]=value;
     if(!save()){
       if(previous===undefined)delete state.scheduleStatus[key];else state.scheduleStatus[key]=previous;
+      syncStudyLogs();
     }
   }
   const open=[...document.querySelectorAll('#app details')].map(d=>d.open);
@@ -268,4 +273,51 @@ function timetable(date,slots){
 }
 function editRecovery(date,start,end,subject){
   editItem(date,null,{id:[date,'recovery',start,end,subject].join('/'),date,origin:date,start,end,name:subject,category:subject,fixed:true,recovery:{date,start,end}});
+}
+
+// Timetable marks and actual measurements share the existing dated study log.
+const accountingSubjects=['簿記論','財務諸表論'];
+function lessonRecord(date,slot){
+  return {date,planStart:slot.start,minutes:mins(slot.end)-mins(slot.start),subject:slot.subject,taskId:slot.id,title:slot.title};
+}
+function syncStudyLogs(){
+  const wanted=new Map(),weeks=new Map();
+  function lessons(date){
+    const week=weekStart(date);
+    if(!weeks.has(week))weeks.set(week,planSlots(date));
+    return weeks.get(week).filter(s=>s.date===date);
+  }
+  state.lessonRecords??={};
+  for(const [key,status] of Object.entries(state.scheduleStatus||{})){
+    if(status!=='実施済'||!key.startsWith('['))continue;
+    let record=state.lessonRecords[key];
+    if(!record){
+      let parts;try{parts=JSON.parse(key);}catch{continue;}
+      if(!Array.isArray(parts)||parts.length!==5||!/^\d{4}-\d{2}-\d{2}$/.test(parts[0]))continue;
+      const slot=lessons(parts[0]).find(s=>lessonStatusKey(parts[0],s)===key);
+      if(slot)record=state.lessonRecords[key]=lessonRecord(parts[0],slot);
+    }
+    if(record)wanted.set(key,record);
+  }
+  for(const e of Object.values(state.agendaEdits||{})){
+    if(e.deleted||e.status!=='実施済')continue;
+    if(accountingSubjects.includes(e.category)){
+      const taskId=e.category==='簿記論'?'studying-boki':'studying-zai';
+      wanted.set(e.id,{date:e.date,planStart:e.start,minutes:e.actual??(mins(e.end)-mins(e.start)),subject:e.category,taskId,title:e.name});
+    }else if(['FAR','国徴'].includes(e.category)){
+      for(const s of lessons(e.date).filter(s=>s.subject===e.category&&s.start>=e.start&&s.end<=e.end)){
+        const key=lessonStatusKey(e.date,s);
+        if(!state.scheduleStatus?.[key])wanted.set(key,lessonRecord(e.date,s));
+      }
+    }
+  }
+  const manual=state.logs.filter(l=>!l.autoKey),old=new Map(state.logs.filter(l=>l.autoKey).map(l=>[l.autoKey,l]));
+  const automatic=[];
+  for(const [key,record] of wanted){
+    const same=manual.some(l=>l.date===record.date&&l.taskId===record.taskId&&l.planStart===record.planStart);
+    if(same)continue;
+    automatic.push({...record,id:old.get(key)?.id||uid(),autoKey:key,accuracy:null,reason:'',created:old.get(key)?.created||Date.now()});
+  }
+  state.logs=manual.concat(automatic);
+  weekCache.clear();
 }

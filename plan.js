@@ -176,6 +176,7 @@ function planSlots(date) {
   const queues={FAR:entries('FAR'),国徴:entries('国徴')};
   const reviews={FAR:[],国徴:[]},seen=new Set(),firstLog=new Map();
   for(const log of state.logs){
+    if(log.autoKey)continue;
     if(log.date>=PLAN_START && (!firstLog.has(log.taskId)||log.date<firstLog.get(log.taskId)))firstLog.set(log.taskId,log.date);
   }
   function enroll(task,day){
@@ -252,7 +253,10 @@ function refreshApp(){
 
 function manualTasks(slots){
   const planned=slots.filter(s=>s.id).map(s=>({id:s.id,value:'slot-'+s.start,name:s.start+' '+s.title,title:s.title,planStart:s.start,subject:s.subject}));
-  return planned.concat(state.tasks.filter(t=>selected<accountingStart||t.subject!=='国徴'),selected>=accountingStart?[{id:'studying-boki',subject:'簿記論',name:'スタディング｜簿記論 個別問題'},{id:'studying-zai',subject:'財務諸表論',name:'スタディング｜財務諸表論 理論暗記ツール'}]:[]);
+  const dated=dayItems(selected).filter(e=>accountingSubjects.includes(e.category)).map(e=>({
+    id:e.category==='簿記論'?'studying-boki':'studying-zai',value:'agenda-'+e.id,name:e.start+' '+e.name,title:e.name,planStart:e.start,subject:e.category
+  }));
+  return planned.concat(dated,state.tasks.filter(t=>selected<accountingStart||t.subject!=='国徴'),selected>=accountingStart?[{id:'studying-boki',subject:'簿記論',name:'スタディング｜簿記論 個別問題'},{id:'studying-zai',subject:'財務諸表論',name:'スタディング｜財務諸表論 理論暗記ツール'}]:[]);
 }
 
 function taxOnlyDay(date){return date>state.settings.farExam;}
