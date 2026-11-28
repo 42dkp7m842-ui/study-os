@@ -38,3 +38,31 @@ input,select,textarea{font-size:16px}nav.tabs{grid-template-columns:repeat(6,min
 .timetable-gap{padding-left:12px;font-variant-numeric:tabular-nums}
 
 .timetable-entry[data-status="一部実施"]{--surface:#eef4ff;--stroke:#b9cdeb;--ink:#294e80}
+
+/* Shared reading rhythm and mobile controls */
+body {background:#f3f6f5;color:#193331;padding-bottom:calc(98px + env(safe-area-inset-bottom))}
+header {padding:18px max(18px,env(safe-area-inset-left));background:linear-gradient(110deg,#123b39,#205552);border-bottom:3px solid #a4c7b8}
+header h1 {font-size:1.4rem;letter-spacing:-.045em}
+main {padding:clamp(14px,3vw,28px)}
+h2 {font-size:clamp(1.38rem,4vw,1.75rem);letter-spacing:-.025em}
+h3 {font-size:1.05rem}
+.card {padding:clamp(14px,2.6vw,22px);margin-bottom:14px;border-radius:16px}
+.metric {background:#edf3f1}
+.metric strong,.timer,.entry-time {font-variant-numeric:tabular-nums}
+.muted,.fine,label {font-size:.84rem;color:#495f62}
+button,input:not([type=checkbox]),select,summary {min-height:44px}
+summary {align-content:center}
+:where(a,summary,input,select,textarea):focus-visible {outline:3px solid #9b6519;outline-offset:2px}
+.next-action {border-left:5px solid #287368;background:linear-gradient(110deg,#e6f3ec,#fff)}
+.next-action h3 {color:#23594e}
+.next-action>b {font-size:1.12rem}
+.timetable-entry {margin:9px 0;padding-right:8px}
+.timetable-entry .agenda-row {padding:12px 10px}
+.entry-time {letter-spacing:.025em}
+.entry-title {font-size:1rem}
+.agenda-row[data-category="簿記論"],.agenda-row[data-category="財務諸表論"] {border-left-color:#477e94}
+.timetable-gap {border-left:2px dashed #afc2bc;margin:8px 10px;padding:5px 12px}
+nav.tabs {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));background:#fff;box-shadow:0 -4px 20px #153c3909}
+.tabs button[aria-current="page"] {background:#dfefe9;color:#125349}
+.tabs button {white-space:nowrap;letter-spacing:-.035em}
+@media(min-width:700px){nav.tabs {max-width:840px;margin-inline:auto;border:1px solid #d6e2dd;border-radius:18px 18px 0 0;padding-inline:10px}}
