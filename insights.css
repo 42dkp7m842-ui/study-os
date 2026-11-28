@@ -36,3 +36,5 @@ input,select,textarea{font-size:16px}nav.tabs{grid-template-columns:repeat(6,min
 .timetable-entry small{color:var(--ink);font-weight:400}
 .timetable-entry .quick-status{width:auto;min-height:44px;margin:0;padding:5px;border-color:var(--stroke);color:var(--ink);background-color:white;font-size:16px}
 .timetable-gap{padding-left:12px;font-variant-numeric:tabular-nums}
+
+.timetable-entry[data-status="一部実施"]{--surface:#eef4ff;--stroke:#b9cdeb;--ink:#294e80}

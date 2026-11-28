@@ -158,6 +158,9 @@ function editItem(date,i,generated){
   form.innerHTML='<h3>予定の編集</h3><label>日付<input name="date" required type="date"></label><label>カテゴリー<select name="category">'+categories.map(c=>'<option>'+c+'</option>').join('')+'</select></label><label>予定名<input name="name" maxlength="240"></label><div class="grid"><label>開始<input name="start" required type="time"></label><label>終了（24:00可）<input name="end" required pattern="([01][0-9]|2[0-3]):[0-5][0-9]|24:00"></label></div><label>所要時間（分）<input name="duration" type="number" min="1" max="1440"></label><label>メモ<textarea name="memo"></textarea></label><label><input type="checkbox" name="fixed"> 固定</label><label>実施状況<select name="status"><option>予定</option><option>実施済</option><option>未実施</option></select></label><label>実際の時間（分）<input name="actual" type="number" min="0" max="1440"></label><label>未実施の理由<input name="reason"></label><p class="fine" id="agendaFree"></p><p role="alert" id="agendaWarning"></p><div class="actions"><button>保存</button><button type="button" class="secondary" data-action="close">閉じる</button></div>';
   const f=form.elements;
   for(const k of ['date','name','start','end','category','status','actual','reason','memo'])f[k].value=e[k]??(k==='status'?'予定':'');
+  if(e.status==='一部実施'){
+    f.status.add(new Option('一部実施','一部実施'));f.status.value='一部実施';
+  }
   f.fixed.checked=e.fixed;f.duration.value=mins(e.end)-mins(e.start);
   function hints(){if(f.date.value)$('agendaFree').textContent='移動先の空き時間 '+freeDay(f.date.value,e.id).map(([a,b])=>hh(a)+'〜'+hh(b)).join('、');}
   function length(){if(f.start.value&&f.end.validity.valid)f.duration.value=mins(f.end.value)-mins(f.start.value);}
@@ -204,13 +207,24 @@ function exerciseReview(date){
 function lessonStatusKey(date,slot){
   return JSON.stringify([date,slot.start,slot.subject,slot.id,slot.title]);
 }
+function studyProgress(date,row,taskId,choice){
+  const planned=mins(row.end)-mins(row.start);
+  const actual=state.logs.filter(l=>!l.autoKey&&l.date===date&&l.planStart===row.start&&l.taskId===taskId)
+    .reduce((sum,l)=>sum+Number(l.minutes),0);
+  const status=choice==='実施済'?'実施済':actual>=planned?'実施済':actual>0?'一部実施':choice==='一部実施'?'予定':choice||'予定';
+  return {planned,actual,status};
+}
 function timetableEntry(date,row,item){
   const lesson=row.subject!==undefined;
   const separate=lesson||item?.missed;
   const key=lesson?lessonStatusKey(date,row):item.id;
-  const logged=lesson&&state.logs.some(l=>l.date===date&&l.taskId===row.id&&l.planStart===row.start);
-  const status=(separate?state.scheduleStatus?.[key]:item.status)||(logged?'実施済':'予定');
-  const marks={'予定':'○','実施済':'✓','未実施':'−'};
+  const choice=separate?state.scheduleStatus?.[key]:item.status;
+  const study=lesson||accountingSubjects.includes(row.category);
+  const taskId=lesson?row.id:row.category==='簿記論'?'studying-boki':'studying-zai';
+  const progress=study?studyProgress(date,row,taskId,choice):null;
+  const status=progress?.status||choice||'予定';
+  const marks=study?{'予定':'○','一部実施':'◐','実施済':'✓','未実施':'−'}:{'予定':'○','実施済':'✓','未実施':'−'};
+  const detail=progress?.actual?` · 実績 ${progress.actual}分 / 予定 ${progress.planned}分${status==='一部実施'?' · 残り '+(progress.planned-progress.actual)+'分':''}`:'';
   const options=Object.entries(marks).map(([value,mark])=>
     `<option value="${value}" ${status===value?'selected':''}>${mark} ${value}</option>`
   ).join('');
@@ -221,19 +235,33 @@ function timetableEntry(date,row,item){
     <button class="agenda-row secondary" data-category="${esc(row.category)}" onclick="${edit}">
       <b class="entry-time">${row.start}–${row.end}</b>
       <span class="entry-title">${esc(row.name)}</span>
-      <small>${esc(row.category)} · ${esc(row.label)}</small>
+      <small>${esc(row.category)} · ${esc(row.label)}${detail}</small>
     </button>
-    <select class="quick-status" aria-label="${esc(row.name)}の実施状況" data-date="${date}" data-item="${separate?'':esc(item.id)}" data-key="${esc(key)}" onchange="saveTimetableStatus(this)">${options}</select>
+    <select class="quick-status" aria-label="${esc(row.name)}の実施状況" data-date="${date}" data-item="${separate?'':esc(item.id)}" data-key="${esc(key)}" data-start="${row.start}" data-end="${row.end}" data-task="${esc(taskId)}" data-subject="${esc(row.category)}" data-title="${esc(row.name)}" onchange="saveTimetableStatus(this)">${options}</select>
   </div>`;
 }
 function saveTimetableStatus(field){
   const {date,item,key}=field.dataset;
   const value=field.value;
-  if(!['予定','実施済','未実施'].includes(value))return;
+  if(!['予定','一部実施','実施済','未実施'].includes(value))return;
+  const priorLogs=state.logs.slice();
+  if(value==='一部実施'){
+    const {start,end,task,subject,title}=field.dataset;
+    const progress=studyProgress(date,{start,end},task);
+    if(!progress.actual){
+      const input=prompt('実際に勉強した時間（分）を入力してください。');
+      const minutes=Number(input);
+      if(input===null||!Number.isInteger(minutes)||minutes<=0||minutes>=progress.planned){
+        if(input!==null)alert('1分以上、予定時間未満で入力してください。');
+        render();return;
+      }
+      state.logs.push({id:uid(),date,taskId:task,planStart:start,subject,title,minutes,accuracy:null,reason:'',created:Date.now()});
+    }
+  }
   if(item){
     const entry=dayItems(date).find(e=>e.id===item);
     if(!entry)return;
-    agendaWrite(()=>{state.agendaEdits[item]={...entry,status:value};});
+    if(!agendaWrite(()=>{state.agendaEdits[item]={...entry,status:value};}))state.logs=priorLogs;
   }else{
     state.scheduleStatus??={};
     const previous=state.scheduleStatus[key];
@@ -243,6 +271,7 @@ function saveTimetableStatus(field){
     }
     state.scheduleStatus[key]=value;
     if(!save()){
+      state.logs=priorLogs;
       if(previous===undefined)delete state.scheduleStatus[key];else state.scheduleStatus[key]=previous;
       syncStudyLogs();
     }
