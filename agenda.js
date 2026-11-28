@@ -1,3 +1,72 @@
+const spotifyLibrary = [
+  [
+    "Study Beats",
+    "playlist",
+    "6gnq97QhPUugDsQntm4FOl"
+  ],
+  [
+    "Workout Motivation",
+    "playlist",
+    "2237sMNMlXS4wWLgdQ1UuV"
+  ],
+  [
+    "Deep Focus",
+    "playlist",
+    "37i9dQZF1DWZeKCadgRdKQ"
+  ],
+  [
+    "50/10 ブラウンノイズ（2時間）",
+    "episode",
+    "3NXe0IEWeuEu1P5YXTXXjY"
+  ],
+  [
+    "25/5 ピンクノイズ",
+    "episode",
+    "3G3fRIxBJEVUNFObgqPoPK"
+  ],
+  [
+    "25/5 ブラウンノイズ",
+    "episode",
+    "0PtEdzfCo9gJJD5wKq8hbH"
+  ],
+  [
+    "Jazz for Study",
+    "playlist",
+    "37i9dQZF1DX3SiCzCxMDOH"
+  ],
+  [
+    "Coffee Shop Jazz",
+    "playlist",
+    "49GS2dBGzIthhpnUQidmye"
+  ]
+];
+function spotifyUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.origin === 'https://open.spotify.com' && /^\/(playlist|episode)\/[a-zA-Z0-9]{22}\/?$/.test(url.pathname)) return url.origin + url.pathname;
+  } catch {}
+  return '';
+}
+function bgmUrl(id) {
+  const [,type,key] = spotifyLibrary[id];
+  return spotifyUrl(state.settings.bgm?.[key]) || 'https://open.spotify.com/'+type+'/'+key;
+}
+function bgmLink(id) {
+  return '<a style="display:inline-flex;align-items:center;min-height:44px;padding:0 8px" target="_blank" rel="noopener noreferrer" href="'+bgmUrl(id)+'">'+spotifyLibrary[id][0]+'</a>';
+}
+function bgmPanel(settings=false) {
+  return '<details class="card"><summary>Spotify BGM'+(settings?'設定':'一覧')+'</summary>'+spotifyLibrary.map(([label,,key],id)=>settings?
+    '<label>'+label+'<input type="url" value="'+bgmUrl(id)+'" onchange="changeBgm('+id+',this)"></label>':bgmLink(id)).join('')+'</details>';
+}
+function changeBgm(id,input) {
+  const value = spotifyUrl(input.value.trim());
+  if (!value) { input.value=bgmUrl(id); alert('Spotifyのプレイリストまたはエピソードの共有リンクを入力してください'); return; }
+  mutate(()=>{state.settings.bgm??={}; state.settings.bgm[spotifyLibrary[id][2]]=value;});
+}
+function agendaBgm(category) {
+  const ids = {FAR:[2,3],'簿記論':[2,5],'財務諸表論':[0,4],'筋トレ':[1],'有酸素運動':[1]}[category];
+  return Array.isArray(ids)?'<div style="grid-column:1/-1">'+ids.map(bgmLink).join('')+'</div>':'';
+}
 // A template occurrence keeps its source identity even after a move.
 const accountingStart='2026-11-28';
 const categories=['筋トレ','有酸素運動','FAR','簿記論','財務諸表論','学習予備','仕事','睡眠','デート','外出','食事','入浴','休憩','その他'];
@@ -238,6 +307,7 @@ function timetableEntry(date,row,item){
       <small>${esc(row.category)} · ${esc(row.label)}${detail}</small>
     </button>
     <select class="quick-status" aria-label="${esc(row.name)}の実施状況" data-date="${date}" data-item="${separate?'':esc(item.id)}" data-key="${esc(key)}" data-start="${row.start}" data-end="${row.end}" data-task="${esc(taskId)}" data-subject="${esc(row.category)}" data-title="${esc(row.name)}" onchange="saveTimetableStatus(this)">${options}</select>
+    ${agendaBgm(row.category)}
   </div>`;
 }
 function saveTimetableStatus(field){
