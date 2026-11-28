@@ -63,10 +63,6 @@ function changeBgm(id,input) {
   if (!value) { input.value=bgmUrl(id); alert('Spotifyのプレイリストまたはエピソードの共有リンクを入力してください'); return; }
   mutate(()=>{state.settings.bgm??={}; state.settings.bgm[spotifyLibrary[id][2]]=value;});
 }
-function agendaBgm(category) {
-  const ids = {FAR:[2,3],'簿記論':[2,5],'財務諸表論':[0,4],'筋トレ':[1],'有酸素運動':[1]}[category];
-  return Array.isArray(ids)?'<div style="grid-column:1/-1">'+ids.map(bgmLink).join('')+'</div>':'';
-}
 // A template occurrence keeps its source identity even after a move.
 const accountingStart='2026-11-28';
 const categories=['筋トレ','有酸素運動','FAR','簿記論','財務諸表論','学習予備','仕事','睡眠','デート','外出','食事','入浴','休憩','その他'];
@@ -307,7 +303,6 @@ function timetableEntry(date,row,item){
       <small>${esc(row.category)} · ${esc(row.label)}${detail}</small>
     </button>
     <select class="quick-status" aria-label="${esc(row.name)}の実施状況" data-date="${date}" data-item="${separate?'':esc(item.id)}" data-key="${esc(key)}" data-start="${row.start}" data-end="${row.end}" data-task="${esc(taskId)}" data-subject="${esc(row.category)}" data-title="${esc(row.name)}" onchange="saveTimetableStatus(this)">${options}</select>
-    ${agendaBgm(row.category)}
   </div>`;
 }
 function saveTimetableStatus(field){
