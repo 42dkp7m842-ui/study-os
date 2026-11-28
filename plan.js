@@ -83,7 +83,15 @@ function weeklyRecovery(cap, sun, sunParts, carry) {
     if(deficit)lost.push({subject,minutes:deficit});
   }
   const lostMinutes=lost.reduce((total,block)=>total+block.minutes,0);
+  const reports=(state.missedTimes||[]).filter(r=>r.date<=sun&&r.resume.slice(0,10)>=cap[0].date);
+  const cutoff=reports.map(r=>r.resume).sort().at(-1)||'';
+  function eligible(date,parts){
+    if(date<cutoff.slice(0,10))return [];
+    const floor=date===cutoff.slice(0,10)?mins(cutoff.slice(11)):0;
+    return parts.map(([a,b])=>[Math.max(floor,a),b]).filter(([a,b])=>a<b);
+  }
   function recover(date, parts, kind, limit=Infinity) {
+    parts=eligible(date,parts);
     let used=0;
     const excluded=Object.values(state.agendaEdits||{}).filter(e=>e.recovery?.date===date).map(e=>[mins(e.recovery.start),mins(e.recovery.end)]);
     for(const [start,end] of parts.flatMap(([a,b])=>gaps(excluded,a,b))){
@@ -101,12 +109,27 @@ function weeklyRecovery(cap, sun, sunParts, carry) {
     return used;
   }
   let availableUsed=0, bufferUsed=0;
+  let priorSunday=0;
+  const earlier=reports.at(-1)?.earlierSlots||[];
+  for(const slot of earlier.filter(s=>s.date>=cap[0].date&&s.date<=sun)){
+    const need=lost.find(n=>n.subject===slot.subject);
+    if(!need?.minutes)continue;
+    const occupied=slots.filter(s=>s.date===slot.date).map(s=>[s.start,s.end]);
+    for(const [a,b] of freeParts(slot.date,slot.start,slot.end,occupied)){
+      const n=Math.min(b-a,need.minutes);
+      if(!n)break;
+      slots.push({...slot,start:a,end:a+n});need.minutes-=n;
+      if(slot.kind==='buffer')bufferUsed+=n;
+      else if(slot.kind==='available')availableUsed+=n;
+      else priorSunday+=n;
+    }
+  }
   for(const day of cap.slice(0,6))availableUsed+=recover(day.date,availableTimeParts(day.date),'available');
   for(const day of cap.slice(0,6))for(const block of day.slots){
     if(block.kind==='buffer')bufferUsed+=recover(day.date,block.parts,'buffer',180-bufferUsed);
   }
   const occupied=slots.filter(slot=>slot.date===sun&&slot.kind==='available').map(slot=>[slot.start,slot.end]);
-  const remainingSun=sunParts.flatMap(([start,end])=>freeParts(sun,start,end,occupied));
+  const remainingSun=eligible(sun,sunParts.flatMap(([start,end])=>freeParts(sun,start,end,occupied)));
   let sundayBookkeeping=null, recoveryParts=remainingSun;
   const id=sun+'/bookkeeping';
   if(sun>=accountingStart && !state.agendaEdits?.[id] && lost.some(b=>b.minutes>0&&sun<(b.subject==='FAR'?state.settings.farExam:taxEnd()))){
@@ -118,7 +141,7 @@ function weeklyRecovery(cap, sun, sunParts, carry) {
       recoveryParts=remainingSun.flatMap(([a,b])=>gaps([[start,end]],a,b));
     }
   }
-  const recovered=recover(sun,recoveryParts,'emergency');
+  const recovered=priorSunday+recover(sun,recoveryParts,'emergency');
   if(!recovered)sundayBookkeeping=null;
   const sunUsed=recovered+(sundayBookkeeping?20:0);
   const uncovered=lostMinutes-availableUsed-bufferUsed-recovered;
