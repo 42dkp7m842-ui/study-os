@@ -53,11 +53,11 @@ function removeAvailableTime(index) {
 
 function missedPanel(date){
   const records=(state.missedTimes||[]).filter(r=>r.date===date);
-  const rows=records.map(r=>`<div class="line"><b>${esc(r.start)}〜${esc(r.end)}</b> ${esc(r.reason||'未実行')}<small>${esc(r.summary)}</small></div>`).join('');
+  const rows=records.map(r=>`<div class="line"><b>${esc(r.start)}〜${esc(r.end)}</b> ${esc(r.name||r.reason||'未実行時間')}<small>${esc(r.summary)}</small></div>`).join('');
   return `<details class="card"><summary>できなかった時間を登録・振替</summary>
     <p class="fine">この日に実行できなかった部分だけ指定してください。学習は予備枠へ、運動・簿記論などは次の空き時間へ振り替えます。</p>
     <div class="grid"><label>開始<input type="time" id="missStart"></label><label>終了<input type="time" id="missEnd"></label></div>
-    <label>理由（任意）<input id="missReason" placeholder="例：残業"></label>
+    <label>この時間に入っていた予定名（任意）<input id="missReason" placeholder="例：残業、急な外出"></label>
     <button onclick="registerMissed()">振替先を確認</button>${rows}</details>`;
 }
 function registerMissed(){

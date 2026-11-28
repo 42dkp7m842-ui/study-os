@@ -30,7 +30,11 @@ function storedDayItems(date){
   const edits=state.agendaEdits||{};
   const events=state.events.filter(e=>e.date===date).map(e=>({...e,id:'event/'+e.id,category:e.category||'その他',fixed:true,manual:true}));
   const moves=(state.blockMoves||[]).filter(m=>m.date===date).map(m=>({...m,id:m.origin+'/legacy/'+m.key,name:m.subject,category:m.kind==='buffer'?'学習予備':m.subject,fixed:true,legacy:true}));
-  return [...baseDay(date),...events,...moves].filter(e=>!edits[e.id]).concat(Object.values(edits).filter(e=>!e.deleted&&e.date===date)).filter(e=>date<accountingStart||e.category!=='国徴').sort((a,b)=>a.start.localeCompare(b.start));
+  const missed=(state.missedTimes||[]).filter(r=>r.date===date).map(r=>({
+    id:'missed/'+date+'/'+r.start,date,origin:date,start:r.start,end:r.end,
+    category:'振替元',name:r.name||r.reason||'未実行時間',fixed:true,missed:true
+  }));
+  return [...baseDay(date),...events,...moves,...missed].filter(e=>!edits[e.id]).concat(Object.values(edits).filter(e=>!e.deleted&&e.date===date)).filter(e=>date<accountingStart||e.category!=='国徴').sort((a,b)=>a.start.localeCompare(b.start));
 }
 function dayItems(date){
   const items=storedDayItems(date);
@@ -142,6 +146,12 @@ function restoreException(date,i){
 function editItem(date,i,generated){
   const e=generated||(i==null?{id:'manual/'+uid(),origin:date,date,name:'',category:'その他',start:'18:00',end:'19:00',fixed:true,manual:true}:dayItems(date)[i]);
   if(!e)return;
+  if(e.missed){
+    const record=state.missedTimes.find(r=>r.date===date&&r.start===e.start);
+    const name=prompt('この時間に入っていた予定名',e.name);
+    if(name!==null)mutate(()=>{record.name=name.trim()||record.reason||'未実行時間';});
+    return;
+  }
   const dialog=document.createElement('dialog');
   dialog.className='agenda-dialog';
   const form=document.createElement('form');dialog.append(form);
