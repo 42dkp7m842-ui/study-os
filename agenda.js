@@ -201,6 +201,40 @@ function exerciseReview(date){
     }).join('')+'<p>変更後の予定 '+s.done+' / '+s.planned+'回（'+(s.planned?Math.round(s.done*100/s.planned)+'%':'予定なし')+'） · 運動 '+s.minutes+'分</p><small>解除 '+s.cancelled+'回 · 振替 '+s.moved+'回 · 追加 '+s.added+'回 · 未実施 '+s.missed.length+'回</small></div>';
   }).join('');
 }
+function lessonStatusKey(date,slot){
+  return JSON.stringify([date,slot.start,slot.subject,slot.id,slot.title]);
+}
+function timetableStatus(date,row,item){
+  const lesson=row.subject!==undefined;
+  const separate=lesson||item?.missed;
+  const key=lesson?lessonStatusKey(date,row):item.id;
+  const logged=lesson&&state.logs.some(l=>l.date===date&&l.taskId===row.id&&l.planStart===row.start);
+  const status=(separate?state.scheduleStatus?.[key]:item.status)||(logged?'実施済':'予定');
+  const options=['予定','実施済','未実施'].map(value=>`<option ${status===value?'selected':''}>${value}</option>`).join('');
+  return `<select class="quick-status" aria-label="${esc(row.name)}の実施状況" data-date="${date}" data-item="${separate?'':esc(item.id)}" data-key="${esc(key)}" onchange="saveTimetableStatus(this)">${options}</select>`;
+}
+function saveTimetableStatus(field){
+  const {date,item,key}=field.dataset;
+  const value=field.value;
+  if(!['予定','実施済','未実施'].includes(value))return;
+  if(item){
+    const entry=dayItems(date).find(e=>e.id===item);
+    if(!entry)return;
+    agendaWrite(()=>{state.agendaEdits[item]={...entry,status:value};});
+  }else{
+    state.scheduleStatus??={};
+    const previous=state.scheduleStatus[key];
+    state.scheduleStatus[key]=value;
+    if(!save()){
+      if(previous===undefined)delete state.scheduleStatus[key];else state.scheduleStatus[key]=previous;
+    }
+  }
+  const open=[...document.querySelectorAll('#app details')].map(d=>d.open);
+  const y=window.scrollY;
+  render();
+  document.querySelectorAll('#app details').forEach((d,i)=>{if(i<open.length)d.open=open[i];});
+  window.scrollTo(0,y);
+}
 function timetable(date,slots){
   const items=dayItems(date);
   const rows=items.flatMap((e,i)=>{
@@ -214,7 +248,7 @@ function timetable(date,slots){
     rows.push({...slot,name:block?.custom&&block.category!=='学習予備'?block.name+'｜'+slot.title:slot.title,category:slot.subject,label:({required:'学習枠',buffer:'通常予備',emergency:'日曜緊急予備',available:'振替'})[slot.kind],index});
   }
   for(const [a,b] of gaps(rows.map(r=>[mins(r.start),mins(r.end)])))rows.push({start:hh(a),end:hh(b),name:'空き時間'});
-  return rows.sort((a,b)=>a.start.localeCompare(b.start)).map(r=>r.category?'<button class="agenda-row secondary" data-category="'+esc(r.category)+'" onclick="'+(r.index>=0?'editItem(\''+date+'\','+r.index+')':'editRecovery(\''+date+'\',\''+r.start+'\',\''+r.end+'\',\''+r.subject+'\')')+'"><b>'+r.start+'–'+r.end+'</b> '+esc(r.name)+'<small>'+esc(r.category)+' · '+esc(r.label)+'</small></button>':'<p class="fine">'+r.start+'–'+r.end+' 空き時間</p>').join('');
+  return rows.sort((a,b)=>a.start.localeCompare(b.start)).map(r=>r.category?'<div class="timetable-entry"><button class="agenda-row secondary" data-category="'+esc(r.category)+'" onclick="'+(r.index>=0?'editItem(\''+date+'\','+r.index+')':'editRecovery(\''+date+'\',\''+r.start+'\',\''+r.end+'\',\''+r.subject+'\')')+'"><b>'+r.start+'–'+r.end+'</b> '+esc(r.name)+'<small>'+esc(r.category)+' · '+esc(r.label)+'</small></button>'+timetableStatus(date,r,items[r.index])+'</div>':'<p class="fine">'+r.start+'–'+r.end+' 空き時間</p>').join('');
 }
 function editRecovery(date,start,end,subject){
   editItem(date,null,{id:[date,'recovery',start,end,subject].join('/'),date,origin:date,start,end,name:subject,category:subject,fixed:true,recovery:{date,start,end}});
